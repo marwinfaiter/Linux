@@ -1,0 +1,122 @@
+#!/usr/local/bin/python3.7
+
+import requests
+import json
+from bs4 import BeautifulSoup
+import re
+import time
+import os
+import sys
+import subprocess
+import signal
+
+if len(sys.argv) == 1 or "--help" in sys.argv:
+    print("Rip videos from chosen url")
+    print("Usage: %s <options>" % sys.argv[0])
+    print("--website")
+    print("--pages")
+    print("--direct")
+    print("--dir")
+    sys.exit(0)
+
+searchlist = []
+
+def parse_options():
+    options = {}
+    lastarg = None
+    for arg in sys.argv:
+        if sys.argv.index(arg) == 0: continue
+        if re.match("^--",arg):
+            options[re.sub("^--","",arg)] = True
+            lastarg = re.sub("^--","",arg)
+        else:
+            options[lastarg] = arg
+    if "pages" not in options:
+        options["pages"] = None
+    if "dir" not in options:
+        options["dir"] = "."
+    return options
+
+def signal_handler(sig, frame):
+    print('\nAborting script!')
+    sys.exit(0)
+signal.signal(signal.SIGINT, signal_handler)
+
+def parse_pages(pages):
+    if pages == None:
+        return [""]
+    else:
+        return list(range(int(pages.split(":")[0]),int(pages.split(":")[1])+1))
+
+def search(url,pages):
+    for page in pages:
+        response = requests.post(url+str(page)+"/")
+        if not response: continue
+        soup = BeautifulSoup(response.content.decode("latin-1"),'html.parser')
+        print("Parsing page: %s" % page)
+        if "direct" in options:
+            rowhash = {}
+            rowhash["href"] = url
+            searchlist.append(rowhash)
+            return
+        for row in soup.select(options["css"]):
+            rowhash = {}
+            link = row.find("a")
+            rowhash["href"] = link["href"]
+            rowhash["page"] = page
+            searchlist.append(rowhash)
+
+def get_media_url(data,href):
+    response = requests.post(href)
+    soup = BeautifulSoup(response.content.decode(),'html.parser')
+    data["mediaurls"] = []
+    #for row in soup.find_all("video"):
+    #    if "src" in row:
+    #        data["mediaurls"].append(row["src"])
+    #    for source in row.find("source") or []:
+    #        if source["src"]:
+    #            data["mediaurls"].append(source["src"])
+    h1 = soup.find("h1")
+    media = None
+    media2 = None
+    if h1:
+        h1 = re.sub("\s+","-",re.sub("\W"," ",h1.text.strip()))
+        media = soup.select_one("img[data-src*='"+h1+"']")
+    if media:
+        media2 = {
+                "filetype":media["data-src"].split(".")[-1],
+                "url":re.sub("-?\d*\.\w+$","",media["data-src"])
+                }
+        data["mediaurls"].append(media2["url"]+"."+media2["filetype"])
+    if media2 and options["css2"] and soup.select_one(options["css2"]):
+        pagecount = soup.select(options["css2"])
+        pagecount = [number.text.strip() for number in pagecount if re.match("^\d+$",number.text)]
+        for page in range(1,int(pagecount[-1])+1):
+            data["mediaurls"].append(media2["url"]+"-"+str(page)+"."+media2["filetype"])
+    #iframe = soup.find("iframe")
+    #if iframe and re.search("gounlimited",iframe["src"]):
+    #    data = get_media_url(data,iframe["src"])
+    return data
+
+def download_media(data):
+    for media in data["mediaurls"]:
+        r = requests.get(media)
+        if not r: continue
+        filepath = options["dir"]+"/"+media.split("/")[-1]
+        open(filepath,"wb").write(r.content)
+        print("Download Complete(%s/%s): %s" % (data["mediaurls"].index(media)+1,len(data["mediaurls"]),filepath))
+
+
+options = parse_options()
+pages = parse_pages(options["pages"])
+search(options["website"],pages)
+for data in searchlist:
+    print(searchlist.index(data),data["href"])
+videos = input("Which do you want? ").split(":")
+searchlist = searchlist[int(videos[0]):int(videos[1])+1]
+for data in searchlist:
+    print("Handling and downloading: Page: %s, %s/%s, %s" % (data["page"] or 1, searchlist.index(data)+1, len(searchlist), data["href"]))
+    data = get_media_url(data,data["href"])
+    download_media(data)
+
+sys.exit("DONE!")
