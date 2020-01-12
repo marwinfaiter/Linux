@@ -121,9 +121,9 @@ sub build_renamehash {
         }
         else {
             chomp(my @videoinfo = `ffmpeg -i "$file->{filepath}" 2>&1 | egrep "Video:"`);
-            my $resolution = (split(",",$videoinfo[0]))[2];
-            $resolution = (split(" ",$resolution))[0];
-            $file->{"quality"} = (split("x",$resolution))[1] // undef;
+            @videoinfo = grep {/\d{3,4}x\d{3,4}/} split(",",$videoinfo[0]);
+            my $resolution = (split("x",$videoinfo[0]))[1] // undef;
+            $file->{"quality"} = (split(" ",$resolution))[0] // undef;
         }
         if ($file->{"newfile"} =~ /(\d{4}\D\d{2}\D\d{2})/) {
             $file->{"date"} = $1;
@@ -150,7 +150,7 @@ sub build_renamehash {
             my ($relativepath) = $file->{"filepath"} =~ /$ARGV[0]\/?(.*)/;
             my @path = split("/",$relativepath);
             pop @path;
-            while ($path[0] !~ /^(Actors|Other)$/) {
+            while ($path[0] and $path[0] !~ /^(Actors|Other)$/) {
                 push @{$file->{"source"}}, shift @path;
             }
             while (my $folder = shift @path) {
