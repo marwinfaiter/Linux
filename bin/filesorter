@@ -88,8 +88,18 @@ sub build_renamehash {
         $file->{"newfile"} =~ s/([\w']+)/\u\L$1/g;
         $file->{"newfile"} =~ s/(\.\w+$)/\L$1/g;
         $file->{"inpath"} = join("/",@filesplit);
+        if ($file->{"newfile"} =~ /\.(\w+)$/) {
+            $file->{"filetype"} = $1;
+            $file->{"newfile"} =~ s/\.\w+$//;
+        }
+        else {
+            print "No filetype for ".$file->{"filepath"}."\n";
+            undef $file;
+            next;
+        }
         @{$file->{"source"}} = $file->{"orgfile"} =~ /\[([^\[\]]+)\]/g;
         foreach my $source (@{$file->{"source"}}) {
+            next if $options{"renameonpath"};
             my $orgsource = $source;
             if (my @match = grep { $_ =~ /^(?:$source)$/i } keys %{$renamedata{"sources"}}) {
                 $source = $renamedata{"sources"}{$match[0]};
@@ -103,11 +113,11 @@ sub build_renamehash {
                 $renamedata{"sources"}{$orgsource} = $source;
             }
         }
-        $file->{"newfile"} =~ s/\[[^\[\]]+\]//g;
+        $file->{"newfile"} =~ s/\[[^\[\]]+\]//ig;
         if ($renamedata{"actors"}) {
             foreach my $actor(@{$renamedata{"actors"}}) {
-                if ($file->{"newfile"} =~ / \(?$actor\)? /i) {
-                    $file->{"newfile"} =~ s/ \(?$actor\)? / ($actor) /;
+                if ($file->{"newfile"} =~ /(^| )\(?$actor\)?($| )/i) {
+                    $file->{"newfile"} =~ s/(^| )\(?$actor\)?($| )/$1($actor)$2/i;
                 }
             }
         }
@@ -115,29 +125,25 @@ sub build_renamehash {
         $file->{"newfile"} =~ s/\(([^()]+)\)//g;
         @{$file->{"story"}} = $file->{"newfile"} =~ /\{([^{}]+)\}/g;
         $file->{"newfile"} =~ s/\{([^{}]+)\}//g;
-        if ($file->{"newfile"} =~ / (\d{3,4})p(\.| )/) {
-            $file->{"quality"} = $1;
-            $file->{"newfile"} =~ s/ \d{3,4}p(\.| )/$1/;
+        if ($file->{"newfile"} =~ /(^| )(\d{3,4})p($| )/i) {
+            $file->{"quality"} = $2;
+            $file->{"newfile"} =~ s/(^| )(\d{3,4})p($| )/$1$3/i;
         }
         else {
             chomp(my @videoinfo = `ffmpeg -i "$file->{filepath}" 2>&1 | egrep "Video:"`);
-            @videoinfo = grep {/\d{3,4}x\d{3,4}/} split(",",$videoinfo[0]);
-            my $resolution = (split("x",$videoinfo[0]))[1] // undef;
-            $file->{"quality"} = (split(" ",$resolution))[0] // undef;
+            if ($videoinfo[0]) {
+                @videoinfo = grep {/\d{3,4}x\d{3,4}/} split(",",$videoinfo[0]);
+                my $resolution = (split("x",$videoinfo[0]))[1] // undef;
+                $file->{"quality"} = (split(" ",$resolution))[0] // undef;
+            }
+            else {
+                printf ("Error [Resolution]: %s", $file->{"filepath"});
+            }
         }
-        if ($file->{"newfile"} =~ /(\d{4}\D\d{2}\D\d{2})/) {
-            $file->{"date"} = $1;
+        if ($file->{"newfile"} =~ /(^| )(\d{4}\D\d{2}\D\d{2})($| )/) {
+            $file->{"date"} = $2;
             $file->{"date"} =~ s/\D/ /g;
-            $file->{"newfile"} =~ s/(\d{4}\D\d{2}\D\d{2})//;
-        }
-        if ($file->{"newfile"} =~ /\.(\w+)$/) {
-            $file->{"filetype"} = $1;
-            $file->{"newfile"} =~ s/\.\w+$//;
-        }
-        else {
-            print "No filetype for ".$file->{"filepath"}."\n";
-            undef $file;
-            next;
+            $file->{"newfile"} =~ s/(^| )(\d{4}\D\d{2}\D\d{2})($| )/$1$3/;
         }
         $file->{"newfile"} =~ s/\s+/ /g;
         $file->{"newfile"} =~ s/^\s+|\s+$//g;
@@ -150,11 +156,11 @@ sub build_renamehash {
             my ($relativepath) = $file->{"filepath"} =~ /$ARGV[0]\/?(.*)/;
             my @path = split("/",$relativepath);
             pop @path;
-            while ($path[0] and $path[0] !~ /^(Actors|Other)$/) {
+            while ($path[0] and $path[0] !~ /^(#Actors|Other)$/) {
                 push @{$file->{"source"}}, shift @path;
             }
             while (my $folder = shift @path) {
-                if ($folder eq "Actors") {
+                if ($folder eq "#Actors") {
                     @{$file->{"actors"}} = split(" & ", shift @path);
                     next;
                 }
@@ -181,15 +187,10 @@ sub build_movepath {
         push @movepath, $out;
         push @movepath, scalar @{$file->{"source"}} > 0? @{$file->{"source"}}:"Other";
         if (scalar @{$file->{"actors"}} > 0) {
-            push @movepath, ("Actors",join(" & ", @{$file->{"actors"}}));
-            push @movepath, @{$file->{"story"}};
-            push @movepaths, join("/",@movepath);
+            push @movepath, ("#Actors",join(" & ", @{$file->{"actors"}}));
         }
-        else {
-            push @movepath, "Other";
-            push @movepath, @{$file->{"story"}};
-            push @movepaths, join("/",@movepath);
-        }
+        push @movepath, @{$file->{"story"}};
+        push @movepaths, join("/",@movepath);
         @{$file->{"outpaths"}} = @movepaths;
     }
 }
