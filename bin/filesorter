@@ -88,6 +88,11 @@ sub get_actors {
 
     @{$renamedata{"actors"}} = grep { scalar (split(" ",$_)) > 1 } @{$renamedata{"actors"}};
     @{$renamedata{"actors"}} = unique(sort @{$renamedata{"actors"}});
+    foreach my $actor (@{$renamedata{"actors"}}) {
+        my @names = split (" ", $actor);
+        $_ = lc $_ and $_ = ucfirst $_ for @names;
+        $actor = join(" ", @names);
+    }
 }
 
 sub build_renamehash {
