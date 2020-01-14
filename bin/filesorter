@@ -11,9 +11,9 @@ Getopt::Long::GetOptions(
     "help"         => sub{help()},
 
     "commit"       => \$options{"commit"},
+    "overwrite"    => \$options{"overwrite"},
     "dir=s"        => \$options{"dir"},
     "noprompt"     => \$options{"noprompt"},
-    "renameonpath" => \$options{"renameonpath"},
     "list"         => \$options{"list"},
 
     "duplicates"   => \$options{"duplicates"},
@@ -42,9 +42,9 @@ print "Usage: $0 <input folder 1> <input folder 2> <...> <options>
 --help              Print this helptext
 
 --commit            Move files and clean input directories
+--overwrite         Move files even on duplicate
 --dir               Set a custom output directory(Default is same as input)
 --noprompt          Dont prompt for source names
---renameonpath      Rename files based on filepath
 --list              List files instead of renaming and moving. Works with filters
 
 --duplicates        Search for duplicates(finds files with same new name or same duration)
@@ -75,12 +75,7 @@ help() if !@ARGV;
 my @LIST;
 foreach my $arg (@ARGV) {
     my @filepaths;
-    if ($options{"renameonpath"} && $options{"filter"}{"source"}) {
-        chomp(@filepaths = `find "$arg/$options{'filter'}{'source'}" -type f`);
-    }
-    else {
-        chomp(@filepaths = `find "$arg" -type f`);
-    }
+    chomp(@filepaths = `find "$arg" -type f`);
     foreach my $path (@filepaths) {
         $path = {
             filepath => $path,
@@ -92,11 +87,11 @@ foreach my $arg (@ARGV) {
 }
 my %renamedata;
 get_actors(@LIST);
-$_ = build_renamehash($_) for @LIST;
-@LIST = filter(@LIST);
+build_renamehash($_) for @LIST;
+filter(@LIST);
 
 if ($options{"duplicates"}) {
-    $_ = build_renamehash($_, duplicate => 1) for @LIST;
+    build_renamehash($_, duplicate => 1) for @LIST;
     my $count = find_duplicates(@LIST);
     foreach my $attribute(keys %$count) {
         foreach my $duplicate ( grep {scalar @{$count->{$attribute}->{$_}} < 2 } keys %{$count->{$attribute}}) {
@@ -153,10 +148,25 @@ sub get_actors {
 }
 
 sub build_renamehash {
-    my ($file, %args) = @_;
+    my $file = shift;
     my @filesplit = split("/",$file->{"filepath"});
     $file->{"newfile"} = $file->{"orgfile"} = pop @filesplit;
     $file->{"newfile"} =~ s/([\w']+)/\u\L$1/g;
+    $file->{"newfile"} =~ s/\s+/ /g;
+    $file->{"newfile"} =~ s/^\s+|\s+$//g;
+
+    get_filetype($file);
+    get_source($file);
+    get_actor($file);
+    get_story($file);
+    get_quality($file);
+    get_date($file);
+    add_custom_data($file);
+    build_newfile($file);
+}
+
+sub get_filetype {
+    my $file = shift;
     $file->{"newfile"} =~ s/(\.\w+$)/\L$1/g;
     if ($file->{"newfile"} =~ /\.(\w+)$/) {
         $file->{"filetype"} = $1;
@@ -165,9 +175,12 @@ sub build_renamehash {
     else {
         push @{$file->{"error"}}, "No filetype";
     }
+}
+
+sub get_source {
+    my $file = shift;
     push @{$file->{"source"}}, $file->{"orgfile"} =~ /\[([^\[\]]+)\]/g;
     foreach my $source (@{$file->{"source"}}) {
-        next if $options{"renameonpath"};
         my $orgsource = $source;
         if (my @match = grep { $_ =~ /^(?:$source)$/i } keys %{$renamedata{"sources"}}) {
             $source = $renamedata{"sources"}{$match[0]};
@@ -182,6 +195,10 @@ sub build_renamehash {
         }
     }
     $file->{"newfile"} =~ s/\[[^\[\]]+\]//ig;
+}
+
+sub get_actor {
+    my $file = shift;
     if ($renamedata{"actors"}) {
         foreach my $actor(@{$renamedata{"actors"}}) {
             if ($file->{"newfile"} =~ /(^| )\(?$actor\)?($| )/i) {
@@ -195,9 +212,17 @@ sub build_renamehash {
     while ($actors ne "" && $file->{"newfile"} =~ /^\s*($actors)/) {
         $file->{"newfile"} =~ s/^\s*($actors)//;
     }
+}
+
+sub get_story {
+    my $file = shift;
     push @{$file->{"story"}}, $file->{"newfile"} =~ /\{([^{}]+)\}/g;
     $file->{"newfile"} =~ s/\{([^{}]+)\}//g;
-    if ($file->{"newfile"} =~ /(^| )(\d{3,4})p($| )/i && !$args{duplicate}) {
+}
+
+sub get_quality {
+    my ($file,%args) = @_;
+    if ($file->{newfile} && $file->{"newfile"} =~ /(^| )(\d{3,4})p($| )/i) {
         $file->{"quality"} = $2;
     }
     else {
@@ -216,16 +241,20 @@ sub build_renamehash {
             $file->{"bitrate"} = $bitrate // undef;
         } or push @{$file->{error}}, "Bitrate";
     }
-    $file->{"newfile"} =~ s/(^| )(\d{3,4})p($| )/$1$3/i;
+    $file->{"newfile"} =~ s/(^| )(\d{3,4})p($| )/$1$3/i if $file->{newfile};
+}
+
+sub get_date {
+    my $file = shift;
     if ($file->{"newfile"} =~ /(^| )(\d{4}\D\d{2}\D\d{2})($| )/) {
         $file->{"date"} = $2;
         $file->{"date"} =~ s/\D/ /g;
         $file->{"newfile"} =~ s/(^| )(\d{4}\D\d{2}\D\d{2})($| )/$1$3/;
     }
-    $file->{"newfile"} =~ s/\s+/ /g;
-    $file->{"newfile"} =~ s/^\s+|\s+$//g;
-    $file->{"title"} = $file->{"newfile"};
-    $file->{"newfile"} = "";
+}
+
+sub add_custom_data {
+    my $file = shift;
     foreach my $attribute (("actor","source","story")) {
         if ($options{add}{"$attribute"."static"}) {
             @{$file->{$attribute}} = @{$options{add}{$attribute}};
@@ -237,34 +266,21 @@ sub build_renamehash {
             unshift @{$file->{$attribute}}, @{$options{add}{$attribute}};
         }
     }
-    if ($options{"renameonpath"}) {
-        @{$file->{"actor"}} = ();
-        @{$file->{"source"}} = ();
-        @{$file->{"story"}} = ();
-        my ($relativepath) = $file->{"filepath"} =~ /$ARGV[0]\/?(.*)/;
-        my @path = split("/",$relativepath);
-        pop @path;
-        while ($path[0] and $path[0] !~ /^(#Actors|Other)$/) {
-            push @{$file->{"source"}}, shift @path;
-        }
-        while (my $folder = shift @path) {
-            if ($folder eq "#Actors") {
-                @{$file->{"actor"}} = split(" & ", shift @path);
-                next;
-            }
-            next if $folder eq "Other";
-            push @{$file->{"story"}}, $folder;
-        }
-    }
+}
+
+sub build_newfile {
+    my $file = shift;
+    $file->{"newfile"} =~ s/^\s+|\s+$//g;
+    $file->{"newfile"} =~ s/\s{2,}/ /g;
+    $file->{"newfile"} = undef if $file->{newfile} eq "";
     my @filename;
     (scalar @{$file->{"source"}} > 0) and push @filename, join("",map { "[$_]" } @{$file->{"source"}});
     (scalar @{$file->{"actor"}} > 0) and push @filename, join(" ",map { "($_)" } sort @{$file->{"actor"}});
     (scalar @{$file->{"story"}} > 0) and push @filename, join(" ",map { "{$_}" } @{$file->{"story"}});
-    $file->{"title"} and push @filename, $file->{"title"};
-    $file->{"date"} and push @filename, $file->{"date"};
-    $file->{"quality"} and push @filename, $file->{"quality"}."p";
-    $file->{"newfile"} = join(" ", @filename).".".$file->{"filetype"};
-    return $file;
+    push @filename, $file->{"newfile"};
+    push @filename, $file->{"date"} // undef;
+    push @filename, ($file->{"quality"}."p") // undef;
+    $file->{"newfile"} = sprintf("%s.%s", join(" ", grep { defined $_ } @filename), $file->{"filetype"});
 }
 
 sub build_movepath {
@@ -290,7 +306,7 @@ sub move_clean {
             if (! -e $outpath && $options{"commit"}) {
                 system "mkdir -p -m 700 \"$outpath\"";
             }
-            if (! -f $outpath."/".$file->{"newfile"}) {
+            if (($options{overwrite} && $file->{"filepath"} ne $outpath."/".$file->{"newfile"}) || ! -f $outpath."/".$file->{"newfile"}) {
                 if ($options{"commit"}) {
                     system sprintf("chmod 600 \"%s\"", $file->{filepath});
                     system sprintf("mv \"%s\" \"%s\"", $file->{"filepath"}, $outpath."/".$file->{"newfile"});
@@ -301,8 +317,11 @@ sub move_clean {
             else {
                 if ($file->{"filepath"} ne $outpath."/".$file->{"newfile"}) {
                     my $oldfile = { filepath => $outpath."/".$file->{"newfile"} };
-                    $oldfile = build_renamehash($oldfile, duplicate => 1);
-                    $file = build_renamehash($file, duplicate => 1);
+                    foreach ($oldfile, $file) {
+                        if (!$_->{quality} || !$_->{bitrate}) {
+                            get_quality($_);
+                        }
+                    }
                     push @{$file->{"error"}}, sprintf("Duplicate: \"%s\"\nResolution(old/new): %s\nBitrate(old/new): %s\n",
                         $outpath."/".$file->{"newfile"},
                         ($oldfile->{quality}//"")."/".($file->{quality}//""),
@@ -319,23 +338,6 @@ sub move_clean {
         system sprintf("find \"%s\" -empty -delete", $_) if $options{commit};
     }
     print $options{commit}? colored("Moved files and cleaned old folders\n","green"):colored("No changes made\n","yellow");
-}
-
-sub mediainfo {
-    my @LIST = @_;
-    foreach my $file (@LIST) {
-        chomp(my @videoinfo = `ffmpeg -i "$file->{filepath}" 2>&1 | egrep "Duration|Video:"`);
-        foreach my $row (@videoinfo) {
-            if ($row =~ /Duration: (\d{2}:\d{2}:\d{2})\.\d{2}.*bitrate (\d+)/) {
-                $file->{"duration"} = $1;
-                $file->{"bitrate"} = $2;
-            }
-            if ($row =~ /Video:/) {
-                $file->{"resolution"} = (split(",",$row))[2];
-            }
-        }
-    }
-    return @LIST;
 }
 
 sub find_duplicates {
