@@ -99,7 +99,7 @@ foreach my $arg (@ARGV) {
 my %renamedata;
 get_actors(@LIST);
 build_renamehash($_) for @LIST;
-filter(@LIST);
+@LIST = filter(@LIST);
 
 if ($options{"list"}) {
     print $_->{filepath},"\n" for @LIST;
