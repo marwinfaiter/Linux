@@ -215,6 +215,17 @@ sub build_renamehash {
     $file->{"newfile"} =~ s/^\s+|\s+$//g;
     $file->{"title"} = $file->{"newfile"};
     $file->{"newfile"} = "";
+    foreach my $attribute (("actor","source","story")) {
+        if ($options{add}{"$attribute"."static"}) {
+            @{$file->{$attribute}} = @{$options{add}{$attribute}};
+        }
+        elsif ($options{add}{"$attribute"."last"}) {
+            push @{$file->{$attribute}}, @{$options{add}{$attribute}};
+        }
+        else {
+            unshift @{$file->{$attribute}}, @{$options{add}{$attribute}};
+        }
+    }
     if ($options{"renameonpath"}) {
         @{$file->{"actor"}} = ();
         @{$file->{"source"}} = ();
@@ -250,17 +261,6 @@ sub build_movepath {
     foreach my $file (@LIST) {
         my @movepaths;
         my @movepath;
-        foreach my $attribute (("actor","source","story")) {
-            if ($options{add}{"$attribute"."static"}) {
-                @{$file->{$attribute}} = @{$options{add}{$attribute}};
-            }
-            elsif ($options{add}{"$attribute"."last"}) {
-                push @{$file->{$attribute}}, @{$options{add}{$attribute}};
-            }
-            else {
-                unshift @{$file->{$attribute}}, @{$options{add}{$attribute}};
-            }
-        }
         push @movepath, $file->{"dir"};
         push @movepath, scalar @{$file->{"source"}} > 0? @{$file->{"source"}}:"Other";
         if (scalar @{$file->{"actor"}} > 0) {
