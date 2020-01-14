@@ -152,11 +152,7 @@ sub get_actors {
 
     @{$renamedata{"actors"}} = grep { scalar (split(" ",$_)) > 1 } @{$renamedata{"actors"}};
     @{$renamedata{"actors"}} = unique(sort @{$renamedata{"actors"}});
-    foreach my $actor (@{$renamedata{"actors"}}) {
-        my @names = split (" ", $actor);
-        $_ = lc $_ and $_ = ucfirst $_ for @names;
-        $actor = join(" ", @names);
-    }
+    $_ =~ s/([\w']+)/\u\L$1/g for @{$renamedata{"actors"}};
 }
 
 sub build_renamehash {
@@ -249,7 +245,7 @@ sub get_quality {
     if ($file->{newfile} && $file->{"newfile"} =~ /(^| )(\d{3,4})p($| )/i) {
         $file->{"quality"} = $2;
     }
-    else {
+    elsif (!$file->{quality} || !$file->{bitrate}) {
         chomp(my @mediainfo = `ffmpeg -i "$file->{filepath}" 2>&1 | egrep "Duration|Video:"`);
         my @mediainfo2;
         eval {
@@ -362,11 +358,7 @@ sub move_clean {
                 system sprintf "unlink \"%s\"\n", $file->{filepath};
             }
             my $oldfile = { filepath => $outpath."/".$file->{"newfile"} };
-            foreach ($oldfile, $file) {
-                if (!$_->{quality} || !$_->{bitrate}) {
-                    get_quality($_);
-                }
-            }
+            get_quality($_) for ($oldfile,$file);
             push @{$file->{"error"}}, sprintf("Old: \"%s\"\nDuplicate: %s\nResolution(old/new): %s\nBitrate(old/new): %s\n%s\n%s\n",
                 colored($outpath."/".$file->{"newfile"},($options{overwrite}?"red":$options{removeduplicate}?"green":"white")),
                 ($options{overwrite}?"New will overwrite old":$options{removeduplicate}?"Will delete new":"No active solution"),
