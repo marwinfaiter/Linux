@@ -331,7 +331,7 @@ sub build_movepath {
         }
 
         push @movepath, @{$file->{"story"}};
-        $file->{"outpaths"} = join("/",@movepath);
+        $file->{"outpath"} = join("/",@movepath);
     }
 }
 
@@ -340,7 +340,7 @@ sub move_clean {
     logger("Starting file moving and cleanup");
 
     foreach my $file (grep {!$_->{"error"}} @LIST) {
-        my $outpath = $file->{"outpaths"};
+        my $outpath = $file->{"outpath"};
         next if $file->{"filepath"} eq $outpath."/".$file->{"newfile"};
         if (! -e $outpath && $options{"commit"}) {
             system "mkdir -p -m 700 \"$outpath\"";
@@ -359,8 +359,7 @@ sub move_clean {
             }
             my $oldfile = { filepath => $outpath."/".$file->{"newfile"} };
             get_quality($_) for ($oldfile,$file);
-            push @{$file->{"error"}}, sprintf("Old: \"%s\"\nDuplicate: %s\nResolution(old/new): %s\nBitrate(old/new): %s\n%s\n%s\n",
-                colored($outpath."/".$file->{"newfile"},($options{overwrite}?"red":$options{removeduplicate}?"green":"white")),
+            push @{$file->{"error"}}, sprintf("Duplicate: %s\nResolution(old/new): %s\nBitrate(old/new): %s\n%s\n%s\n",
                 ($options{overwrite}?"New will overwrite old":$options{removeduplicate}?"Will delete new":"No active solution"),
                 ($oldfile->{quality} // "")."/".($file->{quality} // ""),
                 ($oldfile->{bitrate} // "")."/".($file->{bitrate} // ""),
@@ -370,7 +369,11 @@ sub move_clean {
         }
     }
     foreach my $file (grep {$_->{"error"}} @LIST) {
-        printf("New: \"%s\"\n%s\n", colored($file->{filepath}, ($options{overwrite}?"green":$options{removeduplicate}?"red":"white")), join("\n",@{$file->{"error"}}));
+        printf("Old: %s\nNew: \"%s\"\n%s\n",
+            colored($file->{outpath}."/".$file->{newfile}, ($options{overwrite}?"red":$options{removeduplicate}?"green":"white")),
+            colored($file->{filepath}, ($options{overwrite}?"green":$options{removeduplicate}?"red":"white")),
+            join("\n",@{$file->{"error"}})
+        );
     }
     foreach (@ARGV) {
         system sprintf("find \"%s\" -empty -delete", $_) if $options{commit};
