@@ -8,36 +8,36 @@ use Term::ANSIColor;
 my %options;
 
 Getopt::Long::GetOptions(
-    "help"         => sub{help()},
+    "help"            => sub{help()},
 
-    "commit"       => \$options{"commit"},
-    "overwrite"    => \$options{"overwrite"},
-    "dir=s"        => \$options{"dir"},
-    "noprompt"     => \$options{"noprompt"},
-    "list"         => \$options{"list"},
-    "replace=s"      => \%{$options{"replace"}},
+    "commit"          => \$options{"commit"},
+    "overwrite"       => \$options{"overwrite"},
+    "removeduplicate" => \$options{removeduplicate},
+    "dir=s"           => \$options{"dir"},
+    "noprompt"        => \$options{"noprompt"},
+    "list"            => \$options{"list"},
+    "replace=s"       => \%{$options{"replace"}},
+    "debug"           => \$options{debug},
 
-    "duplicates"   => \$options{"duplicates"},
+    "addactor=s"      => \@{${options}{add}{actor}},
+    "addsource=s"     => \@{${options}{add}{source}},
+    "addstory=s"      => \@{${options}{add}{story}},
 
-    "addactor=s"   => \@{${options}{add}{actor}},
-    "addsource=s"  => \@{${options}{add}{source}},
-    "addstory=s"   => \@{${options}{add}{story}},
+    "actorlast"       => \$options{add}{actorlast},
+    "sourcelast"      => \$options{add}{sourcelast},
+    "storylast"       => \$options{add}{storylast},
 
-    "actorlast"    => \$options{add}{actorlast},
-    "sourcelast"   => \$options{add}{sourcelast},
-    "storylast"    => \$options{add}{storylast},
+    "actorstatic"     => \$options{add}{actorstatic},
+    "sourcestatic"    => \$options{add}{sourcestatic},
+    "storystatic"     => \$options{add}{storystatic},
 
-    "actorstatic"  => \$options{add}{actorstatic},
-    "sourcestatic" => \$options{add}{sourcestatic},
-    "storystatic"  => \$options{add}{storystatic},
-
-    "actor=s"      => \@{$options{"filter"}{"actor"}},
-    "source=s"     => \@{$options{"filter"}{"source"}},
-    "story=s"      => \@{$options{"filter"}{"story"}},
-    "title=s"      => \@{$options{"filter"}{"title"}},
-    "quality=s"    => \@{$options{"filter"}{"quality"}},
-    "filetype=s"   => \@{$options{"filter"}{"filetype"}},
-    "date=s"       => \@{$options{"filter"}{"date"}},
+    "actor=s"         => \@{$options{"filter"}{"actor"}},
+    "source=s"        => \@{$options{"filter"}{"source"}},
+    "story=s"         => \@{$options{"filter"}{"story"}},
+    "title=s"         => \@{$options{"filter"}{"title"}},
+    "quality=s"       => \@{$options{"filter"}{"quality"}},
+    "filetype=s"      => \@{$options{"filter"}{"filetype"}},
+    "date=s"          => \@{$options{"filter"}{"date"}},
 ) or help();
 
 sub help {
@@ -47,11 +47,12 @@ print "Usage: $0 <input folder 1> <input folder 2> <...> <options>
 
 --commit            Move files and clean input directories
 --overwrite         Move files even on duplicate
+--removeduplicate   If a file already exists with new filename, delete instead of move(be careful)
 --dir               Set a custom output directory(default is same as input)
 --noprompt          Dont prompt for source names
 --list              List files instead of renaming and moving. Works with filters
 --replace           \@Replaces part of the title, ex: --replace \"test=hej\"
---duplicates        Search for duplicates(finds files with same new name or same duration)
+--debug             Enable debugging
 
 --addactor          \@Add actor to files, will still add actors from filename
 --addsource         \@Add source to files, will still add sources from filename
@@ -80,6 +81,8 @@ exit;
 help() if !@ARGV;
 my @LIST;
 foreach my $arg (@ARGV) {
+    logger("Parsing input paths");
+
     my @filepaths;
     chomp(@filepaths = `find "$arg" -type f`);
     foreach my $path (@filepaths) {
@@ -91,22 +94,12 @@ foreach my $arg (@ARGV) {
     }
     push @LIST, @filepaths;
 }
+@LIST = sort { $a->{filepath} cmp $b->{filepath} } @LIST;
+
 my %renamedata;
 get_actors(@LIST);
 build_renamehash($_) for @LIST;
 filter(@LIST);
-
-if ($options{"duplicates"}) {
-    build_renamehash($_, duplicate => 1) for @LIST;
-    my $count = find_duplicates(@LIST);
-    foreach my $attribute(keys %$count) {
-        foreach my $duplicate ( grep {scalar @{$count->{$attribute}->{$_}} < 2 } keys %{$count->{$attribute}}) {
-            delete $count->{$attribute}->{$duplicate};
-        }
-    }
-    print Dumper $count;
-    exit;
-}
 
 if ($options{"list"}) {
     print $_->{filepath},"\n" for @LIST;
@@ -116,7 +109,18 @@ if ($options{"list"}) {
 build_movepath(@LIST);
 move_clean(@LIST);
 
+sub logger {
+    my ($message,$color) = @_;
+    return if !$options{debug};
+    print
+        colored("DEBUG => ".((caller(1))[3] // (caller(0))[3]).($message?" => ":""),"magenta"),
+        colored($message // "", $color // "white"),
+        "\n";
+}
+
 sub filter {
+    logger("Filtering list");
+
     my @LIST = @_;
     foreach my $param (keys %{$options{"filter"}}) {
         if (scalar @{$options{"filter"}{$param}} > 0) {
@@ -137,6 +141,8 @@ sub filter {
 }
 
 sub get_actors {
+    logger("Collecting actors");
+
     my @LIST = @_;
     foreach my $file (@LIST) {
         my $filename = (split("/",$file->{"filepath"}))[-1];
@@ -155,6 +161,8 @@ sub get_actors {
 
 sub build_renamehash {
     my $file = shift;
+    logger("Building filehash: ".$file->{filepath});
+
     my @filesplit = split("/",$file->{"filepath"});
     $file->{"newfile"} = $file->{"orgfile"} = pop @filesplit;
     $file->{"newfile"} =~ s/([\w']+)/\u\L$1/g;
@@ -173,6 +181,8 @@ sub build_renamehash {
 
 sub get_filetype {
     my $file = shift;
+    logger("Parsing filetype");
+
     $file->{"newfile"} =~ s/(\.\w+$)/\L$1/g;
     if ($file->{"newfile"} =~ /\.(\w+)$/) {
         $file->{"filetype"} = $1;
@@ -185,6 +195,8 @@ sub get_filetype {
 
 sub get_source {
     my $file = shift;
+    logger("Parsing source");
+
     push @{$file->{"source"}}, $file->{"orgfile"} =~ /\[([^\[\]]+)\]/g;
     foreach my $source (@{$file->{"source"}}) {
         my $orgsource = $source;
@@ -205,6 +217,8 @@ sub get_source {
 
 sub get_actor {
     my $file = shift;
+    logger("Parsing actor");
+
     if ($renamedata{"actors"}) {
         foreach my $actor(@{$renamedata{"actors"}}) {
             if ($file->{"newfile"} =~ /(^| )\(?$actor\)?($| )/i) {
@@ -222,12 +236,16 @@ sub get_actor {
 
 sub get_story {
     my $file = shift;
+    logger("Parsing story");
+
     push @{$file->{"story"}}, $file->{"newfile"} =~ /\{([^{}]+)\}/g;
     $file->{"newfile"} =~ s/\{([^{}]+)\}//g;
 }
 
 sub get_quality {
-    my ($file,%args) = @_;
+    my $file = shift;
+    logger("Parsing/Extracting quality");
+
     if ($file->{newfile} && $file->{"newfile"} =~ /(^| )(\d{3,4})p($| )/i) {
         $file->{"quality"} = $2;
     }
@@ -252,6 +270,8 @@ sub get_quality {
 
 sub get_date {
     my $file = shift;
+    logger("Parsing date");
+
     if ($file->{"newfile"} =~ /(^| )(\d{4}\D\d{2}\D\d{2})($| )/) {
         $file->{"date"} = $2;
         $file->{"date"} =~ s/\D/ /g;
@@ -261,6 +281,8 @@ sub get_date {
 
 sub add_custom_data {
     my $file = shift;
+    logger("Adding custom Actors, Sources and Stories");
+
     foreach my $attribute (("actor","source","story")) {
         if ($options{add}{"$attribute"."static"}) {
             @{$file->{$attribute}} = @{$options{add}{$attribute}};
@@ -276,14 +298,19 @@ sub add_custom_data {
 
 sub build_newfile {
     my $file = shift;
+    logger("Building new filename");
+
     $file->{"newfile"} =~ s/^\s+|\s+$//g;
     $file->{"newfile"} =~ s/\s{2,}/ /g;
+
     foreach my $regex (keys %{$options{replace}}) {
         $file->{"newfile"} =~ s/$regex/$options{replace}{$regex}/g;
     }
+
     $file->{"newfile"} =~ s/^\s+|\s+$//g;
     $file->{"newfile"} =~ s/\s{2,}/ /g;
     $file->{"newfile"} = undef if $file->{newfile} eq "";
+
     my @filename;
     (scalar @{$file->{"source"}} > 0) and push @filename, join("",map { "[$_]" } @{$file->{"source"}});
     (scalar @{$file->{"actor"}} > 0) and push @filename, join(" ",map { "($_)" } sort @{$file->{"actor"}});
@@ -296,70 +323,67 @@ sub build_newfile {
 
 sub build_movepath {
     my @LIST = @_;
+    logger("Building new movepath");
+
     foreach my $file (@LIST) {
-        my @movepaths;
         my @movepath;
         push @movepath, $file->{"dir"};
         push @movepath, scalar @{$file->{"source"}} > 0? @{$file->{"source"}}:"Other";
+
         if (scalar @{$file->{"actor"}} > 0) {
             push @movepath, ("#Actors",join(" & ", @{$file->{"actor"}}));
         }
+
         push @movepath, @{$file->{"story"}};
-        push @movepaths, join("/",@movepath);
-        @{$file->{"outpaths"}} = @movepaths;
+        $file->{"outpaths"} = join("/",@movepath);
     }
 }
 
 sub move_clean {
     my @LIST = @_;
+    logger("Starting file moving and cleanup");
+
     foreach my $file (grep {!$_->{"error"}} @LIST) {
-        foreach my $outpath (@{$file->{"outpaths"}}[0]) {
-            if (! -e $outpath && $options{"commit"}) {
-                system "mkdir -p -m 700 \"$outpath\"";
+        my $outpath = $file->{"outpaths"};
+        next if $file->{"filepath"} eq $outpath."/".$file->{"newfile"};
+        if (! -e $outpath && $options{"commit"}) {
+            system "mkdir -p -m 700 \"$outpath\"";
+        }
+        if (($options{overwrite} && $options{commit}) || ! -f $outpath."/".$file->{"newfile"}) {
+            if ($options{"commit"}) {
+                system sprintf("chmod 600 \"%s\"", $file->{filepath});
+                system sprintf("mv \"%s\" \"%s\"", $file->{"filepath"}, $outpath."/".$file->{"newfile"});
             }
-            if (($options{overwrite} && $file->{"filepath"} ne $outpath."/".$file->{"newfile"}) || ! -f $outpath."/".$file->{"newfile"}) {
-                if ($options{"commit"}) {
-                    system sprintf("chmod 600 \"%s\"", $file->{filepath});
-                    system sprintf("mv \"%s\" \"%s\"", $file->{"filepath"}, $outpath."/".$file->{"newfile"});
-                }
-                printf("Old: \"%s\"\n", $file->{"filepath"});
-                printf("New: \"%s\"\n\n", $outpath."/".$file->{"newfile"});
+            printf("Old: \"%s\"\n", $file->{"filepath"});
+            printf("New: \"%s\"\n\n", $outpath."/".$file->{"newfile"});
+        }
+        else {
+            if ($options{removeduplicate} && $options{commit}) {
+                system sprintf "unlink \"%s\"\n", $file->{filepath};
             }
-            else {
-                if ($file->{"filepath"} ne $outpath."/".$file->{"newfile"}) {
-                    my $oldfile = { filepath => $outpath."/".$file->{"newfile"} };
-                    foreach ($oldfile, $file) {
-                        if (!$_->{quality} || !$_->{bitrate}) {
-                            get_quality($_);
-                        }
-                    }
-                    push @{$file->{"error"}}, sprintf("Duplicate: \"%s\"\nResolution(old/new): %s\nBitrate(old/new): %s\n",
-                        $outpath."/".$file->{"newfile"},
-                        ($oldfile->{quality}//"")."/".($file->{quality}//""),
-                        ($oldfile->{bitrate}//"")."/".($file->{bitrate}//"")
-                    );
+            my $oldfile = { filepath => $outpath."/".$file->{"newfile"} };
+            foreach ($oldfile, $file) {
+                if (!$_->{quality} || !$_->{bitrate}) {
+                    get_quality($_);
                 }
             }
+            push @{$file->{"error"}}, sprintf("Old: \"%s\"\nDuplicate: %s\nResolution(old/new): %s\nBitrate(old/new): %s\n%s\n%s\n",
+                colored($outpath."/".$file->{"newfile"},($options{overwrite}?"red":$options{removeduplicate}?"green":"white")),
+                ($options{overwrite}?"New will overwrite old":$options{removeduplicate}?"Will delete new":"No active solution"),
+                ($oldfile->{quality} // "")."/".($file->{quality} // ""),
+                ($oldfile->{bitrate} // "")."/".($file->{bitrate} // ""),
+                "--overwrite        Move new and overwrite old",
+                "--removeduplicate  Delete new",
+            );
         }
     }
     foreach my $file (grep {$_->{"error"}} @LIST) {
-        printf("\"%s\"\n%s\n", colored($file->{filepath}, "red"), join("\n",@{$file->{"error"}}));
+        printf("New: \"%s\"\n%s\n", colored($file->{filepath}, ($options{overwrite}?"green":$options{removeduplicate}?"red":"white")), join("\n",@{$file->{"error"}}));
     }
     foreach (@ARGV) {
         system sprintf("find \"%s\" -empty -delete", $_) if $options{commit};
     }
     print $options{commit}? colored("Moved files and cleaned old folders\n","green"):colored("No changes made\n","yellow");
-}
-
-sub find_duplicates {
-    my @LIST = @_;
-    my $count = {};
-    foreach my $file(@LIST) {
-        foreach my $attribute(("newfile","duration")) {
-            push @{$count->{$attribute}->{$file->{$attribute}}}, $file->{"filepath"} if $file->{$attribute};
-        }
-    }
-    return $count;
 }
 
 sub unique {
