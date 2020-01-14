@@ -17,7 +17,17 @@ Getopt::Long::GetOptions(
 
     "duplicates"   => \$options{"duplicates"},
 
-    "actor=s"      => \$options{"filter"}{"actors"},
+    "addactor=s"   => \@{${options}{add}{actor}},
+    "actorlast"    => \$options{add}{actorlast},
+    "actorstatic"  => \$options{add}{actorstatic},
+    "addsource=s"  => \@{${options}{add}{source}},
+    "sourcelast"   => \$options{add}{sourcelast},
+    "sourcestatic" => \$options{add}{sourcestatic},
+    "addstory=s"   => \@{${options}{add}{story}},
+    "storylast"    => \$options{add}{storylast},
+    "storystatic"  => \$options{add}{storystatic},
+
+    "actor=s"      => \$options{"filter"}{"actor"},
     "title=s"      => \$options{"filter"}{"title"},
     "quality=s"    => \$options{"filter"}{"title"},
     "story=s"      => \$options{"filter"}{"story"},
@@ -36,6 +46,16 @@ print "Usage: $0 <input folder 1> <input folder 2> <...> <options>
 --renameonpath      Rename files based on filepath
 
 --duplicates        Search for duplicates(finds files with same new name or same duration)
+
+--addactor          Add actors to files, will still add actors from filename(can be specified multiple times)
+--actorlast         Add added actors last instead of first
+--actorstatic       Add added actors indead of the the filenames
+--addsource         Add static source to files, will still add sources from filename(can be specified multiple times)
+--sourcelast        Add added sources last instead of first
+--sourcetatic       Add added sources indead of the the filenames
+--addstory          Add static story to files, will still add stories from filename(can be specified multiple times)
+--storylast         Add added stories last instead of first
+--storystatic       Add added stories indead of the the filenames
 
 --actor             Filter by actors
 --title             Filter by title
@@ -134,7 +154,7 @@ sub build_renamehash {
     else {
         push @{$file->{"error"}}, "No filetype";
     }
-    @{$file->{"source"}} = $file->{"orgfile"} =~ /\[([^\[\]]+)\]/g;
+    push @{$file->{"source"}}, $file->{"orgfile"} =~ /\[([^\[\]]+)\]/g;
     foreach my $source (@{$file->{"source"}}) {
         next if $options{"renameonpath"};
         my $orgsource = $source;
@@ -158,13 +178,13 @@ sub build_renamehash {
             }
         }
     }
-    @{$file->{"actors"}} = sort ($file->{"newfile"} =~ /\(([^()]+)\)/g);
+    push @{$file->{"actor"}}, sort ($file->{"newfile"} =~ /\(([^()]+)\)/g);
     $file->{"newfile"} =~ s/\(([^()]+)\)//g;
-    my $actors = join("|",@{$file->{"actors"}});
+    my $actors = join("|",@{$file->{"actor"}});
     while ($actors ne "" && $file->{"newfile"} =~ /^\s*($actors)/) {
         $file->{"newfile"} =~ s/^\s*($actors)//;
     }
-    @{$file->{"story"}} = $file->{"newfile"} =~ /\{([^{}]+)\}/g;
+    push @{$file->{"story"}}, $file->{"newfile"} =~ /\{([^{}]+)\}/g;
     $file->{"newfile"} =~ s/\{([^{}]+)\}//g;
     if ($file->{"newfile"} =~ /(^| )(\d{3,4})p($| )/i && !$args{duplicate}) {
         $file->{"quality"} = $2;
@@ -196,7 +216,7 @@ sub build_renamehash {
     $file->{"title"} = $file->{"newfile"};
     $file->{"newfile"} = "";
     if ($options{"renameonpath"}) {
-        @{$file->{"actors"}} = ();
+        @{$file->{"actor"}} = ();
         @{$file->{"source"}} = ();
         @{$file->{"story"}} = ();
         my ($relativepath) = $file->{"filepath"} =~ /$ARGV[0]\/?(.*)/;
@@ -207,7 +227,7 @@ sub build_renamehash {
         }
         while (my $folder = shift @path) {
             if ($folder eq "#Actors") {
-                @{$file->{"actors"}} = split(" & ", shift @path);
+                @{$file->{"actor"}} = split(" & ", shift @path);
                 next;
             }
             next if $folder eq "Other";
@@ -216,7 +236,7 @@ sub build_renamehash {
     }
     my @filename;
     (scalar @{$file->{"source"}} > 0) and push @filename, join("",map { "[$_]" } @{$file->{"source"}});
-    (scalar @{$file->{"actors"}} > 0) and push @filename, join(" ",map { "($_)" } sort @{$file->{"actors"}});
+    (scalar @{$file->{"actor"}} > 0) and push @filename, join(" ",map { "($_)" } sort @{$file->{"actor"}});
     (scalar @{$file->{"story"}} > 0) and push @filename, join(" ",map { "{$_}" } @{$file->{"story"}});
     $file->{"title"} and push @filename, $file->{"title"};
     $file->{"date"} and push @filename, $file->{"date"};
@@ -230,10 +250,21 @@ sub build_movepath {
     foreach my $file (@LIST) {
         my @movepaths;
         my @movepath;
+        foreach my $attribute (("actor","source","story")) {
+            if ($options{add}{"$attribute"."static"}) {
+                @{$file->{$attribute}} = @{$options{add}{$attribute}};
+            }
+            elsif ($options{add}{"$attribute"."last"}) {
+                push @{$file->{$attribute}}, @{$options{add}{$attribute}};
+            }
+            else {
+                unshift @{$file->{$attribute}}, @{$options{add}{$attribute}};
+            }
+        }
         push @movepath, $file->{"dir"};
         push @movepath, scalar @{$file->{"source"}} > 0? @{$file->{"source"}}:"Other";
-        if (scalar @{$file->{"actors"}} > 0) {
-            push @movepath, ("#Actors",join(" & ", @{$file->{"actors"}}));
+        if (scalar @{$file->{"actor"}} > 0) {
+            push @movepath, ("#Actors",join(" & ", @{$file->{"actor"}}));
         }
         push @movepath, @{$file->{"story"}};
         push @movepaths, join("/",@movepath);
