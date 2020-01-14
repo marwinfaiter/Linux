@@ -15,17 +15,20 @@ Getopt::Long::GetOptions(
     "dir=s"        => \$options{"dir"},
     "noprompt"     => \$options{"noprompt"},
     "list"         => \$options{"list"},
+    "replace=s"      => \%{$options{"replace"}},
 
     "duplicates"   => \$options{"duplicates"},
 
     "addactor=s"   => \@{${options}{add}{actor}},
-    "actorlast"    => \$options{add}{actorlast},
-    "actorstatic"  => \$options{add}{actorstatic},
     "addsource=s"  => \@{${options}{add}{source}},
-    "sourcelast"   => \$options{add}{sourcelast},
-    "sourcestatic" => \$options{add}{sourcestatic},
     "addstory=s"   => \@{${options}{add}{story}},
+
+    "actorlast"    => \$options{add}{actorlast},
+    "sourcelast"   => \$options{add}{sourcelast},
     "storylast"    => \$options{add}{storylast},
+
+    "actorstatic"  => \$options{add}{actorstatic},
+    "sourcestatic" => \$options{add}{sourcestatic},
     "storystatic"  => \$options{add}{storystatic},
 
     "actor=s"      => \@{$options{"filter"}{"actor"}},
@@ -39,34 +42,37 @@ Getopt::Long::GetOptions(
 
 sub help {
 print "Usage: $0 <input folder 1> <input folder 2> <...> <options>
+\@ means that you can specify the option multiple times
 --help              Print this helptext
 
 --commit            Move files and clean input directories
 --overwrite         Move files even on duplicate
---dir               Set a custom output directory(Default is same as input)
+--dir               Set a custom output directory(default is same as input)
 --noprompt          Dont prompt for source names
 --list              List files instead of renaming and moving. Works with filters
-
+--replace           \@Replaces part of the title, ex: --replace \"test=hej\"
 --duplicates        Search for duplicates(finds files with same new name or same duration)
 
---addactor          Add actors to files, will still add actors from filename(can be specified multiple times)
---actorlast         Add added actors last instead of first
---actorstatic       Add added actors indead of the the filenames
---addsource         Add static source to files, will still add sources from filename(can be specified multiple times)
---sourcelast        Add added sources last instead of first
---sourcetatic       Add added sources indead of the the filenames
---addstory          Add static story to files, will still add stories from filename(can be specified multiple times)
---storylast         Add added stories last instead of first
---storystatic       Add added stories indead of the the filenames
+--addactor          \@Add actor to files, will still add actors from filename
+--addsource         \@Add source to files, will still add sources from filename
+--addstory          \@Add story to files, will still add stories from filename
 
-Filters(can be specified multiple times):
---actor             Filter by actor
---source            Filter by source
---story             Filter by story
---title             Filter by title
---quality           Filter by quality
---filetype          Filter by filetype
---date              Filter by date
+--actorlast         Add added actors last instead of first
+--sourcelast        Add added sources last instead of first
+--storylast         Add added stories last instead of first
+
+--actorstatic       Replace all actors with the ones specified with addactor
+--sourcetatic       Replace all sources with the ones specified with addsource
+--storystatic       Replace all stories with the ones specified with addstory
+
+Filters:
+--actor             \@Filter by actor
+--source            \@Filter by source
+--story             \@Filter by story
+--title             \@Filter by title
+--quality           \@Filter by quality
+--filetype          \@Filter by filetype
+--date              \@Filter by date
 ";
 exit;
 }
@@ -270,6 +276,11 @@ sub add_custom_data {
 
 sub build_newfile {
     my $file = shift;
+    $file->{"newfile"} =~ s/^\s+|\s+$//g;
+    $file->{"newfile"} =~ s/\s{2,}/ /g;
+    foreach my $regex (keys %{$options{replace}}) {
+        $file->{"newfile"} =~ s/$regex/$options{replace}{$regex}/g;
+    }
     $file->{"newfile"} =~ s/^\s+|\s+$//g;
     $file->{"newfile"} =~ s/\s{2,}/ /g;
     $file->{"newfile"} = undef if $file->{newfile} eq "";
