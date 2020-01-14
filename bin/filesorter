@@ -160,10 +160,9 @@ sub build_renamehash {
     }
     @{$file->{"actors"}} = sort ($file->{"newfile"} =~ /\(([^()]+)\)/g);
     $file->{"newfile"} =~ s/\(([^()]+)\)//g;
-    foreach my $actor (@{$file->{"actors"}}) {
-        while ($file->{"newfile"} =~ /^\s*$actor/) {
-            $file->{"newfile"} =~ s/^\s*$actor//;
-        }
+    my $actors = join("|",@{$file->{"actors"}});
+    while ($file->{"newfile"} =~ /^\s*($actors)/) {
+        $file->{"newfile"} =~ s/^\s*($actors)//;
     }
     @{$file->{"story"}} = $file->{"newfile"} =~ /\{([^{}]+)\}/g;
     $file->{"newfile"} =~ s/\{([^{}]+)\}//g;
