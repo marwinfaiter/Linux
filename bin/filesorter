@@ -14,6 +14,7 @@ Getopt::Long::GetOptions(
     "dir=s"        => \$options{"dir"},
     "noprompt"     => \$options{"noprompt"},
     "renameonpath" => \$options{"renameonpath"},
+    "list"         => \$options{"list"},
 
     "duplicates"   => \$options{"duplicates"},
 
@@ -27,13 +28,13 @@ Getopt::Long::GetOptions(
     "storylast"    => \$options{add}{storylast},
     "storystatic"  => \$options{add}{storystatic},
 
-    "actor=s"      => \$options{"filter"}{"actor"},
-    "title=s"      => \$options{"filter"}{"title"},
-    "quality=s"    => \$options{"filter"}{"title"},
-    "story=s"      => \$options{"filter"}{"story"},
-    "filetype=s"   => \$options{"filter"}{"filetype"},
-    "source=s"     => \$options{"filter"}{"source"},
-    "date=s"       => \$options{"filter"}{"date"},
+    "actor=s"      => \@{$options{"filter"}{"actor"}},
+    "source=s"     => \@{$options{"filter"}{"source"}},
+    "story=s"      => \@{$options{"filter"}{"story"}},
+    "title=s"      => \@{$options{"filter"}{"title"}},
+    "quality=s"    => \@{$options{"filter"}{"quality"}},
+    "filetype=s"   => \@{$options{"filter"}{"filetype"}},
+    "date=s"       => \@{$options{"filter"}{"date"}},
 ) or help();
 
 sub help {
@@ -44,6 +45,7 @@ print "Usage: $0 <input folder 1> <input folder 2> <...> <options>
 --dir               Set a custom output directory(Default is same as input)
 --noprompt          Dont prompt for source names
 --renameonpath      Rename files based on filepath
+--list              List files instead of renaming and moving. Works with filters
 
 --duplicates        Search for duplicates(finds files with same new name or same duration)
 
@@ -57,12 +59,13 @@ print "Usage: $0 <input folder 1> <input folder 2> <...> <options>
 --storylast         Add added stories last instead of first
 --storystatic       Add added stories indead of the the filenames
 
---actor             Filter by actors
---title             Filter by title
---quality           Filter byt quality
---story             Filter by story
---filetype          Filter by filetype
+Filters(can be specified multiple times):
+--actor             Filter by actor
 --source            Filter by source
+--story             Filter by story
+--title             Filter by title
+--quality           Filter by quality
+--filetype          Filter by filetype
 --date              Filter by date
 ";
 exit;
@@ -91,8 +94,9 @@ my %renamedata;
 get_actors(@LIST);
 $_ = build_renamehash($_) for @LIST;
 @LIST = filter(@LIST);
+
 if ($options{"duplicates"}) {
-    @LIST = mediainfo(@LIST);
+    $_ = build_renamehash($_, duplicate => 1) for @LIST;
     my $count = find_duplicates(@LIST);
     foreach my $attribute(keys %$count) {
         foreach my $duplicate ( grep {scalar @{$count->{$attribute}->{$_}} < 2 } keys %{$count->{$attribute}}) {
@@ -102,20 +106,27 @@ if ($options{"duplicates"}) {
     print Dumper $count;
     exit;
 }
+
+if ($options{"list"}) {
+    print $_->{filepath},"\n" for @LIST;
+    exit;
+}
+
 build_movepath(@LIST);
 move_clean(@LIST);
 
 sub filter {
     my @LIST = @_;
     foreach my $param (keys %{$options{"filter"}}) {
-        if ($options{"filter"}{$param}) {
+        if (scalar @{$options{"filter"}{$param}} > 0) {
             @LIST = grep {
                     if ($_->{$param}) {
+                        my $regex = join("|",@{$options{"filter"}{$param}});
                         if (ref $_->{$param} eq "ARRAY") {
-                            grep { /$options{"filter"}{$param}/i } @{$_->{$param}};
+                            grep { /$regex/i } @{$_->{$param}};
                         }
                         else {
-                            $_->{$param} =~ /$options{"filter"}{$param}/i
+                            $_->{$param} =~ /$regex/i;
                         }
                     }
                 } @LIST;
@@ -305,7 +316,7 @@ sub move_clean {
         printf("\"%s\"\n%s\n", colored($file->{filepath}, "red"), join("\n",@{$file->{"error"}}));
     }
     foreach (@ARGV) {
-        system sprintf("find %s -empty -delete", $_) if $options{commit};
+        system sprintf("find \"%s\" -empty -delete", $_) if $options{commit};
     }
     print $options{commit}? colored("Moved files and cleaned old folders\n","green"):colored("No changes made\n","yellow");
 }
