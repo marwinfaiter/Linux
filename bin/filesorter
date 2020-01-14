@@ -8,9 +8,15 @@ use Term::ANSIColor;
 my %options;
 
 Getopt::Long::GetOptions(
+    "help"         => sub{help()},
+
     "commit"       => \$options{"commit"},
     "dir=s"        => \$options{"dir"},
     "noprompt"     => \$options{"noprompt"},
+    "renameonpath" => \$options{"renameonpath"},
+
+    "duplicates"   => \$options{"duplicates"},
+
     "actor=s"      => \$options{"filter"}{"actors"},
     "title=s"      => \$options{"filter"}{"title"},
     "quality=s"    => \$options{"filter"}{"title"},
@@ -18,11 +24,31 @@ Getopt::Long::GetOptions(
     "filetype=s"   => \$options{"filter"}{"filetype"},
     "source=s"     => \$options{"filter"}{"source"},
     "date=s"       => \$options{"filter"}{"date"},
-    "renameonpath" => \$options{"renameonpath"},
-    "duplicates"   => \$options{"duplicates"},
-);
+) or help();
 
-exit print "Missing input directory\n" if !@ARGV;
+sub help {
+print "Usage: $0 <input folder 1> <input folder 2> <...> <options>
+--help              Print this helptext
+
+--commit            Move files and clean input directories
+--dir               Set a custom output directory(Default is same as input)
+--noprompt          Dont prompt for source names
+--renameonpath      Rename files based on filepath
+
+--duplicates        Search for duplicates(finds files with same new name or same duration)
+
+--actor             Filter by actors
+--title             Filter by title
+--quality           Filter byt quality
+--story             Filter by story
+--filetype          Filter by filetype
+--source            Filter by source
+--date              Filter by date
+";
+exit;
+}
+
+help() if !@ARGV;
 my @LIST;
 foreach my $arg (@ARGV) {
     my @filepaths;
