@@ -312,7 +312,7 @@ sub build_newfile {
     push @filename, $file->{"newfile"} // undef;
     push @filename, $file->{"date"} // undef;
     push @filename, $file->{Resolution}? $file->{Resolution}."p" : undef;
-    $file->{"newfile"} = sprintf("%s.%s", join(" ", grep { defined $_ } @filename), $file->{"filetype"});
+    $file->{"newfile"} = sprintf("%s.%s", join(" ", grep { defined $_ } @filename), $file->{"filetype"} // "");
 }
 
 sub build_movepath {
@@ -329,7 +329,7 @@ sub build_movepath {
         }
 
         push @movepath, @{$file->{"story"}};
-        $file->{"outpath"} = join("/",@movepath);
+        $file->{"dir"} = join("/",@movepath);
     }
 }
 
@@ -338,24 +338,24 @@ sub move_clean {
     logger("Starting file moving and cleanup");
 
     foreach my $file (grep {!$_->{"error"}} @LIST) {
-        my $outpath = $file->{"outpath"};
-        next if $file->{"filepath"} eq $outpath."/".$file->{"newfile"};
-        if (! -e $outpath && $options{"commit"}) {
-            system "mkdir -p -m 700 \"$outpath\"";
+        my $dir = $file->{dir};
+        next if $file->{"filepath"} eq $dir."/".$file->{"newfile"};
+        if (! -e $dir && $options{"commit"}) {
+            system "mkdir -p -m 700 \"$dir\"";
         }
-        if (($options{overwrite} && $options{commit}) || ! -f $outpath."/".$file->{"newfile"}) {
+        if (($options{overwrite} && $options{commit}) || ! -f $dir."/".$file->{"newfile"}) {
             if ($options{"commit"}) {
                 system sprintf("chmod 600 \"%s\"", $file->{filepath});
-                system sprintf("mv \"%s\" \"%s\"", $file->{"filepath"}, $outpath."/".$file->{"newfile"});
+                system sprintf("mv \"%s\" \"%s\"", $file->{"filepath"}, $dir."/".$file->{"newfile"});
             }
             printf("Old: \"%s\"\n", $file->{"filepath"});
-            printf("New: \"%s\"\n\n", $outpath."/".$file->{"newfile"});
+            printf("New: \"%s\"\n\n", $dir."/".$file->{"newfile"});
         }
         else {
             if ($options{removeduplicate} && $options{commit}) {
                 system sprintf "unlink \"%s\"\n", $file->{filepath};
             }
-            my $oldfile = { filepath => $outpath."/".$file->{"newfile"} };
+            my $oldfile = { filepath => $dir."/".$file->{"newfile"} };
             get_quality($_) for ($oldfile,$file);
             push @{$file->{"error"}}, sprintf("Duplicate: %s\nResolution(old/new): %s\nBitrate(old/new): %s\nDuration(old/new): %s\n%s\n%s\n",
                 ($options{overwrite}?"New will overwrite old":$options{removeduplicate}?"Will delete new":"No active solution"),
@@ -369,7 +369,7 @@ sub move_clean {
     }
     foreach my $file (grep {$_->{"error"}} @LIST) {
         printf("Old: %s\nNew: \"%s\"\n%s\n",
-            colored($file->{outpath}."/".$file->{newfile}, ($options{overwrite}?"red":$options{removeduplicate}?"green":"white")),
+            colored($file->{dir}."/".$file->{newfile}, ($options{overwrite}?"red":$options{removeduplicate}?"green":"white")),
             colored($file->{filepath}, ($options{overwrite}?"green":$options{removeduplicate}?"red":"white")),
             join("\n",@{$file->{"error"}})
         );
