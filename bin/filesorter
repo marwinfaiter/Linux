@@ -243,23 +243,21 @@ sub get_quality {
     logger("Parsing/Extracting quality");
 
     if ($file->{newfile} && $file->{"newfile"} =~ /(^| )(\d{3,4})p($| )/i) {
-        $file->{"quality"} = $2;
+        $file->{Resolution} = $2;
     }
-    elsif (!$file->{quality} || !$file->{bitrate}) {
+    elsif (!$file->{Duration} || !$file->{Resolution} || !$file->{Bitrate}) {
+        my %attrs = (
+            Resolution => "\\d{3,4}x(\\d{3,4})",
+            Duration => "Duration: (\\d{2}:\\d{2}:\\d{2})",
+            Bitrate => "bitrate: (\\d+)",
+        );
         chomp(my @mediainfo = `ffmpeg -i "$file->{filepath}" 2>&1 | egrep "Duration|Video:"`);
-        my @mediainfo2;
-        eval {
-            no warnings "all";
-            @mediainfo2 = grep {/\d{3,4}x\d{3,4}/} split(",",$mediainfo[1]);
-            my $resolution = (split("x",$mediainfo2[0]))[1];
-            $file->{"quality"} = (split(" ",$resolution))[0] // undef;
-        } or push @{$file->{error}}, "Resolution";
-        eval {
-            no warnings "all";
-            @mediainfo2 = grep {/bitrate/} split(",",$mediainfo[0]);
-            my ($bitrate) = $mediainfo2[0] =~ /bitrate: (\d+)/;
-            $file->{"bitrate"} = $bitrate // undef;
-        } or push @{$file->{error}}, "Bitrate";
+        foreach my $attr (keys %attrs) {
+            join(" ",@mediainfo) =~ /$attrs{$attr}/;
+            $file->{$attr} = $1
+                or
+            push @{$file->{error}}, "Failed to extract ".$attr;
+        }
     }
     $file->{"newfile"} =~ s/(^| )(\d{3,4})p($| )/$1$3/i if $file->{newfile};
 }
@@ -311,9 +309,9 @@ sub build_newfile {
     (scalar @{$file->{"source"}} > 0) and push @filename, join("",map { "[$_]" } @{$file->{"source"}});
     (scalar @{$file->{"actor"}} > 0) and push @filename, join(" ",map { "($_)" } sort @{$file->{"actor"}});
     (scalar @{$file->{"story"}} > 0) and push @filename, join(" ",map { "{$_}" } @{$file->{"story"}});
-    push @filename, $file->{"newfile"};
+    push @filename, $file->{"newfile"} // undef;
     push @filename, $file->{"date"} // undef;
-    push @filename, ($file->{"quality"}."p") // undef;
+    push @filename, $file->{Resolution}? $file->{Resolution}."p" : undef;
     $file->{"newfile"} = sprintf("%s.%s", join(" ", grep { defined $_ } @filename), $file->{"filetype"});
 }
 
@@ -359,10 +357,11 @@ sub move_clean {
             }
             my $oldfile = { filepath => $outpath."/".$file->{"newfile"} };
             get_quality($_) for ($oldfile,$file);
-            push @{$file->{"error"}}, sprintf("Duplicate: %s\nResolution(old/new): %s\nBitrate(old/new): %s\n%s\n%s\n",
+            push @{$file->{"error"}}, sprintf("Duplicate: %s\nResolution(old/new): %s\nBitrate(old/new): %s\nDuration(old/new): %s\n%s\n%s\n",
                 ($options{overwrite}?"New will overwrite old":$options{removeduplicate}?"Will delete new":"No active solution"),
-                ($oldfile->{quality} // "")."/".($file->{quality} // ""),
-                ($oldfile->{bitrate} // "")."/".($file->{bitrate} // ""),
+                ($oldfile->{Resolution} // "")."/".($file->{Resolution} // ""),
+                ($oldfile->{Bitrate} // "")."/".($file->{Bitrate} // ""),
+                ($oldfile->{Duration} // "")."/".($file->{Duration} // ""),
                 "--overwrite        Move new and overwrite old",
                 "--removeduplicate  Delete new",
             );
