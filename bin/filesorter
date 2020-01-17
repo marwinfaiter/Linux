@@ -358,8 +358,8 @@ sub move_clean {
         else {
             if ($options{removeduplicate} && $options{commit}) {
                 system sprintf "rm \"%s\"\n", $file->{filepath};
-                printf("Existing:\"%s\"\n\n", colored($dir."/".$file->{newfile},"green"));
-                printf("New:     \"%s\"\n", colored($file->{filepath}, "red"));
+                printf("Existing:\"%s\"\n", colored($dir."/".$file->{newfile},"green"));
+                printf("New:     \"%s\"\n\n", colored($file->{filepath}, "red"));
                 next;
             }
             my $oldfile = { filepath => $dir."/".$file->{newfile} };
@@ -374,12 +374,10 @@ sub move_clean {
         }
     }
     foreach my $file (grep {$_->{error} && $_->{duplicate}} @LIST) {
-        printf("New:      \"%s\"\nExisting: \"%s\"\n%s\n%s\n\n",
-            colored($file->{filepath}, ($options{overwrite}?"green":$options{removeduplicate}?"red":"reset")),
-            colored($file->{dir}."/".$file->{newfile}, ($options{overwrite}?"red":$options{removeduplicate}?"green":"reset")),
-            colored("Errors:", "magenta"),
-            join("\n",@{$file->{"error"}})
-        );
+            printf("Existing: \"%s\"\n",colored($file->{dir}."/".$file->{newfile}, ($options{overwrite}?"red":$options{removeduplicate}?"green":"reset")));
+            printf("New:      \"%s\"\n\n",colored($file->{filepath}, ($options{overwrite}?"green":$options{removeduplicate}?"red":"reset")));
+            printf("%s\n", colored("Errors:", "magenta"));
+            print join("\n",@{$file->{"error"}})."\n\n";
     }
     foreach my $file (grep {$_->{error} && !$_->{duplicate}} @LIST) {
         printf("Input:  \"%s\"\nOutput: \"%s\"\n%s\n%s\n\n",
