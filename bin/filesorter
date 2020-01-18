@@ -106,8 +106,10 @@ foreach my $arg (@ARGV) {
 @LIST = sort { $a->{orgfile} cmp $b->{orgfile} } @LIST;
 
 my %renamedata;
+my $count=1;
+$| ++;
 get_actors(@LIST);
-my $sourcecount;
+get_source($_) for @LIST;
 build_renamehash($_) for @LIST;
 build_movepath(@LIST);
 @LIST = filter(@LIST);
@@ -170,13 +172,14 @@ sub build_renamehash {
     logger("Building filehash: ".$file->{filepath});
 
     get_filetype($file);
-    get_source($file);
     get_actor($file);
     get_story($file);
     get_quality($file);
     get_date($file);
     add_custom_data($file);
     build_newfile($file);
+    printf("%.2f%%\r", $count*100/scalar @LIST);
+    $count++;
 }
 
 sub get_filetype {
@@ -201,9 +204,7 @@ sub get_source {
     foreach my $source (@{$file->{source}}) {
         my $orgsource = $source;
         if (my @match = grep { $_ =~ /^(?:$source)$/i } keys %{$renamedata{sources}}) {
-            $sourcecount++ if $source eq $file->{source}->[-1];
             $source = $renamedata{sources}{$match[0]}{source};
-            printf("%.2f%%\r", $sourcecount*100/$renamedata{sources}{$match[0]}{count}) if $source eq $file->{source}->[-1];
         }
         else {
             if (!$options{noprompt}) {
@@ -212,9 +213,6 @@ sub get_source {
                 $source = $orgsource if $source eq "";
             }
             $renamedata{sources}{$orgsource}{source} = $source;
-            $renamedata{sources}{$orgsource}{count} = scalar grep {$_->{orgfile} =~ /\[$orgsource\]/i } @LIST;
-            $sourcecount = 1;
-            printf("%.2f%%\r", $sourcecount*100/$renamedata{sources}{$orgsource}{count}) if $source eq $file->{source}->[-1];
         }
     }
     $file->{newfile} =~ s/\[[^\[\]]+\]//ig;
@@ -265,7 +263,7 @@ sub get_quality {
             join(" ",@mediainfo) =~ /$attrs{$attr}/;
             $file->{$attr} = $1
                 or
-            push @{$file->{error}}, $attr.": Failed to extract";
+            push @{$file->{error}}, $attr.": Failed to extract" if $file->{duplicate} || $file->{filetype} !~ /^(jpg|png|gif|jpeg)$/i;
         }
     }
     if ($file->{newfile}) {
@@ -362,7 +360,7 @@ sub move_clean {
                 printf("New:     \"%s\"\n\n", colored($file->{filepath}, "red"));
                 next;
             }
-            my $oldfile = { filepath => $dir."/".$file->{newfile} };
+            my $oldfile = { filepath => $dir."/".$file->{newfile}, duplicate => 1 };
             get_quality($_) for ($oldfile,$file);
             $file->{duplicate} = 1;
             push @{$file->{error}}, sprintf("Duplicate: %s", $options{overwrite}?"New will overwrite existing":$options{removeduplicate}?"Will delete new":"No active solution");
@@ -375,7 +373,7 @@ sub move_clean {
     }
     foreach my $file (grep {$_->{error} && $_->{duplicate}} @LIST) {
             printf("Existing: \"%s\"\n",colored($file->{dir}."/".$file->{newfile}, ($options{overwrite}?"red":$options{removeduplicate}?"green":"reset")));
-            printf("New:      \"%s\"\n\n",colored($file->{filepath}, ($options{overwrite}?"green":$options{removeduplicate}?"red":"reset")));
+            printf("New:      \"%s\"\n",colored($file->{filepath}, ($options{overwrite}?"green":$options{removeduplicate}?"red":"reset")));
             printf("%s\n", colored("Errors:", "magenta"));
             print join("\n",@{$file->{"error"}})."\n\n";
     }
