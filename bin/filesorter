@@ -17,6 +17,7 @@ Getopt::Long::GetOptions(
     "noprompt"        => \$options{noprompt},
     "list"            => \$options{list},
     "dump"            => \$options{dump},
+    "delete"          => \$options{delete},
     "cleantitle"      => \$options{cleantitle},
     "debug"           => \$options{debug},
 
@@ -53,6 +54,7 @@ print "Usage: $0 <input folder 1> <input folder 2> <...> <options>
 --noprompt          Dont prompt for source names
 --list              List files instead of renaming and moving. Works with filters
 --dump              Same as list but Dumper instead
+--delete            Delete found files, works with filters
 --cleantitle        Removes -|_|,|.|! from file title, works on mp4|wmv|avi|mpg|ts|flv|mkv|jpg|mov
 --debug             Enable debugging
 
@@ -116,6 +118,12 @@ build_movepath(@LIST);
 
 if ($options{list} || $options{dump}) {
     print $options{list}? $_->{filepath}."\n": Dumper $_ for @LIST;
+    exit;
+}
+
+if ($options{delete}) {
+    print colored("Deleting " . $_->{filepath} . "\n", "red") and unlink $_->{filepath} for @LIST;
+    system sprintf("find $_ -empty -delete") for @ARGV;
     exit;
 }
 
