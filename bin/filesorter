@@ -92,6 +92,7 @@ foreach my $arg (@ARGV) {
     foreach my $file (@filepaths) {
         my @filesplit = split("/",$file);
         my $newfile = my $orgfile = pop @filesplit;
+        $newfile =~ s/-|_|,|!|\.(?!\w+$)/ /g if $options{cleantitle};
         $newfile =~ s/([\w']+)/\u\L$1/g;
         $newfile =~ s/\s+/ /g;
         $newfile =~ s/^\s+|\s+$//g;
@@ -113,8 +114,10 @@ $| ++;
 get_actors(@LIST);
 get_source($_) for @LIST;
 build_renamehash($_) for @LIST;
-build_movepath(@LIST);
 @LIST = filter(@LIST);
+add_custom_data($_) for @LIST;
+build_newfile($_) for @LIST;
+build_movepath(@LIST);
 
 if ($options{list} || $options{dump}) {
     print $options{list}? $_->{filepath}."\n": Dumper $_ for @LIST;
@@ -184,8 +187,6 @@ sub build_renamehash {
     get_story($file);
     get_quality($file);
     get_date($file);
-    add_custom_data($file);
-    build_newfile($file);
     printf("%.2f%%\r", $count*100/scalar @LIST);
     $count++;
 }
@@ -269,9 +270,12 @@ sub get_quality {
         chomp(my @mediainfo = `ffmpeg -i "$file->{filepath}" 2>&1 | egrep "Duration|Video:"`);
         foreach my $attr (keys %attrs) {
             join(" ",@mediainfo) =~ /$attrs{$attr}/;
-            $file->{$attr} = $1
-                or
-            push @{$file->{error}}, $attr.": Failed to extract" if $file->{duplicate} || $file->{filetype} !~ /^(jpg|png|gif|jpeg)$/i;
+            if ($1) {
+                $file->{$attr} = $1
+            }
+            elsif ($file->{filetype} !~ /^(jpg|png|gif|jpeg)$/i) {
+                push @{$file->{error}}, $attr.": Failed to extract";
+            }
         }
     }
     if (!$file->{duplicate}) {
@@ -311,8 +315,6 @@ sub build_newfile {
     my $file = shift;
     logger("Building new filename");
 
-    $file->{newfile} =~ s/-|_|,|!|\./ /g if $options{cleantitle};
-    $file->{newfile} =~ s/([\w']+)/\u\L$1/g if $options{cleantitle};
     $file->{newfile} =~ s/^\s+|\s+$//g;
     $file->{newfile} =~ s/\s{2,}/ /g;
     $file->{newfile} = undef if $file->{newfile} eq "";
