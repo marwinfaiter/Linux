@@ -37,7 +37,7 @@ Getopt::Long::GetOptions(
     "source=s"        => \@{$options{filter}{source}},
     "story=s"         => \@{$options{filter}{story}},
     "title=s"         => \@{$options{filter}{title}},
-    "quality=s"       => \@{$options{filter}{quality}},
+    "resolution=s"    => \@{$options{filter}{Resolution}},
     "filetype=s"      => \@{$options{filter}{filetype}},
     "date=s"          => \@{$options{filter}{date}},
 ) or help();
@@ -75,7 +75,7 @@ Filters:
 --source            \@Filter by source
 --story             \@Filter by story
 --title             \@Filter by title
---quality           \@Filter by quality
+--resolution        \@Filter by quality
 --filetype          \@Filter by filetype
 --date              \@Filter by date
 ";
@@ -92,7 +92,7 @@ foreach my $arg (@ARGV) {
     foreach my $file (@filepaths) {
         my @filesplit = split("/",$file);
         my $newfile = my $orgfile = pop @filesplit;
-        $newfile =~ s/-|_|,|!|\.(?!\w+$)/ /g if $options{cleantitle};
+        $newfile =~ s/-|_|,|!|\?|\.(?!\w+$)/ /g if $options{cleantitle};
         $newfile =~ s/([\w']+)/\u\L$1/g;
         $newfile =~ s/\s+/ /g;
         $newfile =~ s/^\s+|\s+$//g;
