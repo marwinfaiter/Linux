@@ -8,7 +8,7 @@ use Term::ANSIColor;
 my %options;
 
 Getopt::Long::GetOptions(
-    "help"            => sub{help()},
+    "help"            => \&help,
 
     "commit"          => \$options{commit},
     "overwrite"       => \$options{overwrite},
@@ -21,17 +21,25 @@ Getopt::Long::GetOptions(
     "cleantitle"      => \$options{cleantitle},
     "debug"           => \$options{debug},
 
-    "addactor=s"      => \@{${options}{add}{actor}},
-    "addsource=s"     => \@{${options}{add}{source}},
-    "addstory=s"      => \@{${options}{add}{story}},
+    "replaceactor=s"  => \%{$options{custom}{replace}{actor}},
+    "replacesource=s" => \%{$options{custom}{replace}{source}},
+    "replacestory=s"  => \%{$options{custom}{replace}{story}},
 
-    "actorlast"       => \$options{add}{actorlast},
-    "sourcelast"      => \$options{add}{sourcelast},
-    "storylast"       => \$options{add}{storylast},
+    "deleteactor=s"  => \@{$options{custom}{delete}{actor}},
+    "deletesource=s" => \@{$options{custom}{delete}{source}},
+    "deletestory=s"  => \@{$options{custom}{delete}{story}},
 
-    "actorstatic"     => \$options{add}{actorstatic},
-    "sourcestatic"    => \$options{add}{sourcestatic},
-    "storystatic"     => \$options{add}{storystatic},
+    "addactor=s"      => \@{$options{custom}{add}{actor}},
+    "addsource=s"     => \@{$options{custom}{add}{source}},
+    "addstory=s"      => \@{$options{custom}{add}{story}},
+
+    "actorlast"       => \$options{custom}{add}{actorlast},
+    "sourcelast"      => \$options{custom}{add}{sourcelast},
+    "storylast"       => \$options{custom}{add}{storylast},
+
+    "actorstatic"     => \$options{custom}{add}{actorstatic},
+    "sourcestatic"    => \$options{custom}{add}{sourcestatic},
+    "storystatic"     => \$options{custom}{add}{storystatic},
 
     "actor=s"         => \@{$options{filter}{actor}},
     "source=s"        => \@{$options{filter}{source}},
@@ -115,7 +123,7 @@ get_actors(@LIST);
 get_source($_) for @LIST;
 build_renamehash($_) for @LIST;
 @LIST = filter(@LIST);
-add_custom_data($_) for @LIST;
+custom_data($_) for @LIST;
 build_newfile($_) for @LIST;
 build_movepath(@LIST);
 
@@ -125,7 +133,14 @@ if ($options{list} || $options{dump}) {
 }
 
 if ($options{delete}) {
-    print colored("Deleting " . $_->{filepath} . "\n", "red") and unlink $_->{filepath} for @LIST;
+    foreach my $file (@LIST) {
+        if (!$options{commit}) {
+            print colored("Would delete " . $file->{filepath} . "\n", "yellow");
+            next;
+        }
+        print colored("Deleting " . $file->{filepath} . "\n", "red");
+        unlink $file->{filepath};
+    }
     system sprintf("find $_ -empty -delete") for @ARGV;
     exit;
 }
@@ -294,19 +309,26 @@ sub get_date {
     }
 }
 
-sub add_custom_data {
+sub custom_data {
     my $file = shift;
     logger("Adding custom Actors, Sources and Stories");
 
     foreach my $attribute (("actor","source","story")) {
-        if ($options{add}{$attribute."static"}) {
-            @{$file->{$attribute}} = @{$options{add}{$attribute}};
+        foreach my $delete (@{$options{custom}{delete}{$attribute}}) {
+            /^$delete$/i and undef $_ for @{$file->{$attribute}};
         }
-        elsif ($options{add}{$attribute."last"}) {
-            push @{$file->{$attribute}}, @{$options{add}{$attribute}};
+        @{$file->{$attribute}} = grep {defined $_} @{$file->{$attribute}};
+        foreach my $replacement (keys %{$options{custom}{replace}{$attribute}}) {
+            s/^$replacement$/$options{custom}{replace}{$attribute}{$replacement}/i for @{$file->{$attribute}};
+        }
+        if ($options{custom}{add}{$attribute."static"}) {
+            @{$file->{$attribute}} = @{$options{custom}{add}{$attribute}};
+        }
+        elsif ($options{custom}{add}{$attribute."last"}) {
+            push @{$file->{$attribute}}, @{$options{custom}{add}{$attribute}};
         }
         else {
-            unshift @{$file->{$attribute}}, @{$options{add}{$attribute}};
+            unshift @{$file->{$attribute}}, @{$options{custom}{add}{$attribute}};
         }
     }
 }
