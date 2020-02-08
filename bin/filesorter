@@ -330,6 +330,7 @@ sub custom_data {
         else {
             unshift @{$file->{$attribute}}, @{$options{custom}{add}{$attribute}};
         }
+        @{$file->{$attribute}} = unique(@{$file->{$attribute}});
     }
 }
 
