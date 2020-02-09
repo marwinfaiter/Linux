@@ -249,16 +249,12 @@ sub get_actor {
     if ($renamedata{actors}) {
         foreach my $actor(@{$renamedata{actors}}) {
             if ($file->{newfile} =~ /(^| )\(?$actor\)?($| )/i) {
-                $file->{newfile} =~ s/(^| )\(?$actor\)?($| )/$1($actor)$2/i;
+                $file->{newfile} =~ s/(^| )\(?$actor\)?($| )/$1($actor)$2/gi;
             }
         }
     }
     push @{$file->{actor}}, sort ($file->{newfile} =~ /\(([^()]+)\)/g);
     $file->{newfile} =~ s/\(([^()]+)\)//g;
-    my $actors = join("|",@{$file->{actor}});
-    while ($actors ne "" && $file->{newfile} =~ /^\s*($actors)/) {
-        $file->{newfile} =~ s/^\s*($actors)//;
-    }
 }
 
 sub get_story {
@@ -286,7 +282,8 @@ sub get_quality {
         foreach my $attr (keys %attrs) {
             join(" ",@mediainfo) =~ /$attrs{$attr}/;
             if ($1) {
-                $file->{$attr} = $1
+                $file->{$attr} = $1;
+                delete $file->{$attr} if $file->{$attr} !~ /^[0-9:?]+$/;
             }
             elsif ($file->{filetype} !~ /^(jpg|png|gif|jpeg)$/i) {
                 push @{$file->{error}}, $attr.": Failed to extract";
