@@ -330,6 +330,7 @@ sub custom_data {
         foreach my $replacement (keys %{$options{custom}{replace}{$attribute}}) {
             s/^$replacement$/$options{custom}{replace}{$attribute}{$replacement}/i for @{$file->{$attribute}};
         }
+        @{$options{custom}{add}{$attribute}} = split(",",join(",",@{$options{custom}{add}{$attribute}}));
         if ($options{custom}{add}{$attribute."static"}) {
             @{$file->{$attribute}} = @{$options{custom}{add}{$attribute}};
         }
