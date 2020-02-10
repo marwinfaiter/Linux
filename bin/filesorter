@@ -260,8 +260,8 @@ sub get_actor {
 
     if ($renamedata{actors}) {
         foreach my $actor(@{$renamedata{actors}}) {
-            if ($file->{newfile} =~ /(^| )\(?$actor\)?($| )/i) {
-                $file->{newfile} =~ s/(^| )\(?$actor\)?($| )/$1($actor)$2/gi;
+            if ($file->{newfile} =~ /(^| )$actor($| )/i) {
+                $file->{newfile} =~ s/(^| )$actor($| )/$1($actor)$2/gi;
             }
         }
     }
