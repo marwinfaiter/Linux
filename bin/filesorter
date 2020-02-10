@@ -11,9 +11,13 @@ Getopt::Long::GetOptions(
     "help"            => \&help,
 
     "commit"          => \$options{commit},
+
     "overwrite"       => \$options{overwrite},
     "removeduplicate" => \$options{removeduplicate},
+    "keepboth"        => \$options{keepboth},
+
     "dir=s"           => \$options{dir},
+    "forcemediainfo"  => \$options{forcemediainfo},
     "noprompt"        => \$options{noprompt},
     "list"            => \$options{list},
     "dump"            => \$options{dump},
@@ -52,13 +56,17 @@ Getopt::Long::GetOptions(
 
 sub help {
 print "Usage: $0 <input folder 1> <input folder 2> <...> <options>
-\@ means that you can specify the option multiple times
+\@ means that you can specify the option multiple times. You can also separate values with \",\"
 --help              Print this helptext
 
 --commit            Move files and clean input directories
+
 --overwrite         Move files even on duplicate
 --removeduplicate   If a file already exists with new filename, delete instead of move(be careful)
+--keepboth          Adds an incrementing number at end of file to keep both
+
 --dir               Set a custom output directory(default is same as input)
+--forcemediainfo    Force extraction of mediainfo even if resolution exists in filename
 --noprompt          Dont prompt for source names
 --list              List files instead of renaming and moving. Works with filters
 --dump              Same as list but Dumper instead
@@ -83,7 +91,7 @@ Filters:
 --source            \@Filter by source
 --story             \@Filter by story
 --title             \@Filter by title
---resolution        \@Filter by quality
+--resolution        \@Filter by quality <=> works as well. ex: <1080 for resolutions under 1080p
 --filetype          \@Filter by filetype
 --date              \@Filter by date
 ";
@@ -164,20 +172,24 @@ sub filter {
         if (scalar @{$options{filter}{$param}} > 0) {
             @LIST = grep {
                     if ($_->{$param}) {
+                        @{$options{filter}{$param}} = split(",",join(",",@{$options{filter}{$param}}));
                         my $regex = join("|",@{$options{filter}{$param}});
                         if (ref $_->{$param} eq "ARRAY") {
                             grep { /$regex/i } @{$_->{$param}};
                         }
-                        elsif (${$options{filter}{$param}}[0] =~ /^<=(\d+)$/) {
+                        elsif ($param eq "Resolution" && $regex =~ /^(\d+)p?$/) {
+                            $_->{$param} == $1;
+                        }
+                        elsif ($regex =~ /^<=(\d+)p?$/) {
                             $_->{$param} <= $1;
                         }
-                        elsif (${$options{filter}{$param}}[0] =~ /^<(\d+)$/) {
+                        elsif ($regex =~ /^<(\d+)p?/) {
                             $_->{$param} < $1;
                         }
-                        elsif (${$options{filter}{$param}}[0] =~ /^>=(\d+)$/) {
+                        elsif ($regex =~ /^>=(\d+)p?$/) {
                             $_->{$param} >= $1;
                         }
-                        elsif (${$options{filter}{$param}}[0] =~ /^>(\d+)$/) {
+                        elsif ($regex =~ /^>(\d+)p?$/) {
                             $_->{$param} > $1;
                         }
                         else {
@@ -214,7 +226,7 @@ sub build_renamehash {
     get_story($file);
     get_quality($file);
     get_date($file);
-    printf("%.2f%%\r", $count*100/scalar @LIST);
+    printf("%d/%d (%.2f%%)\r", $count, scalar @LIST, $count*100/scalar @LIST);
     $count++;
 }
 
@@ -281,7 +293,7 @@ sub get_quality {
     my $file = shift;
     logger("Parsing/Extracting quality");
 
-    if (!$file->{duplicate} && $file->{newfile} =~ /(\W|^)(\d{3,4})p(\W|$)/i) {
+    if (!$file->{duplicate} && $file->{newfile} =~ /(\W|^)(\d{3,4})p(\W|$)/i && !$options{forcemediainfo}) {
         $file->{Resolution} = $2;
     }
     elsif (!$file->{Duration} || !$file->{Resolution} || !$file->{Bitrate}) {
@@ -341,6 +353,7 @@ sub custom_data {
             unshift @{$file->{$attribute}}, @{$options{custom}{add}{$attribute}};
         }
         @{$file->{$attribute}} = unique(@{$file->{$attribute}});
+        s/^\s+|\s+$//g for @{$file->{$attribute}};
     }
 }
 
@@ -351,12 +364,17 @@ sub build_newfile {
     $file->{newfile} =~ s/^\s+|\s+$//g;
     $file->{newfile} =~ s/\s{2,}/ /g;
     $file->{newfile} = undef if $file->{newfile} eq "";
+    $file->{title} = $file->{newfile} if !$file->{duplicate};
 
     my @filename;
     (scalar @{$file->{source}} > 0) and push @filename, join("",map { "[$_]" } @{$file->{source}});
     (scalar @{$file->{actor}} > 0) and push @filename, join(" ",map { "($_)" } sort @{$file->{actor}});
     (scalar @{$file->{story}} > 0) and push @filename, join(" ",map { "{$_}" } @{$file->{story}});
-    push @filename, $file->{newfile} // undef;
+    push @filename, $file->{title} // undef;
+    if ($file->{duplicate}) {
+        push @filename, $file->{duplicate};
+        $file->{duplicate}++;
+    }
     push @filename, $file->{date} // undef;
     push @filename, $file->{Resolution}? $file->{Resolution}."p" : undef;
     $file->{newfile} = sprintf("%s.%s", join(" ", grep { defined $_ } @filename), $file->{filetype} // "");
@@ -387,6 +405,10 @@ sub move_clean {
     foreach my $file (grep {!$_->{error}} @LIST) {
         my $dir = $file->{dir};
         next if $file->{filepath} eq $dir."/".$file->{newfile};
+        if ($options{keepboth}) {
+            $file->{duplicate} = 1;
+            build_newfile($file) until ! -f $dir."/".$file->{newfile} && !grep {$_->{dir} ne $file->{dir} && $_->{newfile} ne $file->{newfile}} @LIST;
+        }
         if (($options{overwrite} && $options{commit}) || ! -f $dir."/".$file->{newfile}) {
             if ($options{commit}) {
                 system "mkdir -p -m 700 \"$dir\"" if ! -e $dir;
@@ -416,6 +438,7 @@ sub move_clean {
             }
             push @{$file->{error}}, "--overwrite        Move new and overwrite existing";
             push @{$file->{error}}, "--removeduplicate  Delete new";
+            push @{$file->{error}}, "--keepboth         Add Dup X to end of newfile";
         }
     }
     foreach my $file (grep {$_->{error} && $_->{duplicate}} @LIST) {
