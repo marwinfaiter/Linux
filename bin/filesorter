@@ -168,6 +168,18 @@ sub filter {
                         if (ref $_->{$param} eq "ARRAY") {
                             grep { /$regex/i } @{$_->{$param}};
                         }
+                        elsif (${$options{filter}{$param}}[0] =~ /^<=(\d+)$/) {
+                            $_->{$param} <= $1;
+                        }
+                        elsif (${$options{filter}{$param}}[0] =~ /^<(\d+)$/) {
+                            $_->{$param} < $1;
+                        }
+                        elsif (${$options{filter}{$param}}[0] =~ /^>=(\d+)$/) {
+                            $_->{$param} >= $1;
+                        }
+                        elsif (${$options{filter}{$param}}[0] =~ /^>(\d+)$/) {
+                            $_->{$param} > $1;
+                        }
                         else {
                             $_->{$param} =~ /$regex/i;
                         }
