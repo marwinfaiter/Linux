@@ -6,6 +6,12 @@ use Getopt::Long;
 use Term::ANSIColor;
 
 my %options;
+my %counthash = ();
+my @LIST;
+my %renamedata;
+my $count = 1;
+$|++;
+$Data::Dumper::Indent = 1;
 
 Getopt::Long::GetOptions(
     "help"            => \&help,
@@ -99,7 +105,6 @@ exit;
 }
 
 help() if !@ARGV;
-my @LIST;
 foreach my $arg (@ARGV) {
     logger("Parsing input paths");
 
@@ -124,9 +129,6 @@ foreach my $arg (@ARGV) {
 }
 @LIST = sort { $a->{orgfile} cmp $b->{orgfile} } @LIST;
 
-my %renamedata;
-my $count=1;
-$| ++;
 get_actors(@LIST);
 get_source($_) for @LIST;
 build_renamehash($_) for @LIST;
@@ -135,23 +137,43 @@ custom_data($_) for @LIST;
 build_newfile($_) for @LIST;
 build_movepath(@LIST);
 
-if ($options{list} || $options{dump}) {
-    print $options{list}? $_->{filepath}."\n": Dumper $_ for @LIST;
+if ($options{delete} || $options{list} || $options{dump}) {
+    foreach my $file (@LIST) {
+        if ($options{dump}) {
+            print Dumper $file;
+        }
+        elsif ($options{list}) {
+            my $temptree = \%counthash;
+            my @movepath = split("/",$file->{filepath});
+            pop @movepath;
+            while (my $folder = shift @movepath) {
+                if (scalar @movepath == 0) {
+                    $temptree->{$folder}{$file->{newfile}} = undef;
+                }
+                else {
+                    $temptree->{$folder} = {} if !$temptree->{$folder};
+                    $temptree = $temptree->{$folder}
+                }
+            }
+        }
+        elsif ($options{delete}) {
+            if (!$options{commit}) {
+                print colored("Would delete " . $file->{filepath} . "\n", "yellow");
+                next;
+            }
+            print colored("Deleting " . $file->{filepath} . "\n", "red");
+            unlink $file->{filepath};
+        }
+    }
+    if ($options{list}) {
+        print Dumper \%counthash;
+    }
+    elsif($options{delete} && $options{commit}) {
+        system sprintf("find $_ -empty -delete") for @ARGV;
+    }
     exit;
 }
 
-if ($options{delete}) {
-    foreach my $file (@LIST) {
-        if (!$options{commit}) {
-            print colored("Would delete " . $file->{filepath} . "\n", "yellow");
-            next;
-        }
-        print colored("Deleting " . $file->{filepath} . "\n", "red");
-        unlink $file->{filepath};
-    }
-    system sprintf("find $_ -empty -delete") for @ARGV;
-    exit;
-}
 
 move_clean(@LIST);
 
