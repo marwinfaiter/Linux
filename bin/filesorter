@@ -293,11 +293,7 @@ sub get_actor {
     logger("Parsing actor");
 
     if ($renamedata{actors}) {
-        foreach my $actor(@{$renamedata{actors}}) {
-            if ($file->{newfile} =~ /(^| )$actor($| )/i) {
-                $file->{newfile} =~ s/(^| )$actor($| )/$1($actor)$2/gi;
-            }
-        }
+        $file->{newfile} =~ s/(^| )$_($| )/$1($_)$2/gi for @{$renamedata{actors}};
     }
     push @{$file->{actor}}, sort ($file->{newfile} =~ /\(([^()]+)\)/g);
     $file->{newfile} =~ s/\(([^()]+)\)//g;
