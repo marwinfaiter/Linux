@@ -126,7 +126,7 @@ if ($options{list} || $options{dump} || $options{delete}) {
             pop @movepath;
             while (my $folder = shift @movepath) {
                 if (scalar @movepath == 0) {
-                    $temptree->{$folder}{$file->{newfile}} = undef;
+                    $temptree->{$folder}{$file->{orgfile}} = undef;
                 }
                 else {
                     $temptree->{$folder} = {} if !$temptree->{$folder};
@@ -237,10 +237,7 @@ sub get_actors {
     logger("Collecting actors");
     my $file = shift;
 
-    push @{$renamedata{actors}}, $file->{newfile} =~ /\(([^()]+)\)/g;
-
-    @{$renamedata{actors}} = grep { scalar (split(" ",$_)) > 1 } @{$renamedata{actors}};
-    @{$renamedata{actors}} = unique(@{$renamedata{actors}});
+    $renamedata{actors}{$_} = 1 for (grep { scalar (split(" ",$_)) > 1 } ($file->{newfile} =~ /\(([^()]+)\)/g));
 }
 
 sub build_renamehash {
@@ -277,8 +274,8 @@ sub get_source {
     push @{$file->{source}}, $file->{orgfile} =~ /\[([^\[\]]+)\]/g;
     foreach my $source (@{$file->{source}}) {
         my $orgsource = $source;
-        if (my @match = grep { $_ =~ /^$source$/i } keys %{$renamedata{sources}}) {
-            $source = $renamedata{sources}{$match[0]}{source};
+        if ($renamedata{sources}{lc $source}) {
+            $source = $renamedata{sources}{lc $source};
         }
         else {
             if (!$options{noprompt}) {
@@ -286,7 +283,7 @@ sub get_source {
                 chomp ($source = <STDIN>);
                 $source = $orgsource if $source eq "";
             }
-            $renamedata{sources}{$orgsource}{source} = $source;
+            $renamedata{sources}{lc $orgsource} = $source;
         }
     }
     $file->{newfile} =~ s/\[[^\[\]]+\]//ig;
@@ -296,9 +293,14 @@ sub get_actor {
     logger("Parsing actor");
     my $file = shift;
 
-    $file->{newfile} =~ s/(^| )$_($| )/$1($_)$2/gi for @{$renamedata{actors}};
-    push @{$file->{actor}}, sort ($file->{newfile} =~ /\(([^()]+)\)/g);
-    $file->{newfile} =~ s/\(([^()]+)\)//g;
+    my @filename = split(" ",$file->{newfile});
+    while (my $chunk = shift @filename) {
+        if ($filename[0] && $renamedata{actors}{"$chunk $filename[0]"}) {
+            $file->{newfile} =~ s/([^(])$chunk(\W)$filename[0]([^)])/$1($chunk$2$filename[0])$3/ig;
+        }
+    }
+    push @{$file->{actor}}, $file->{newfile} =~ /\(([^()]+)\)/g;
+    $file->{newfile} =~ s/\([^()]+\)//g;
 }
 
 sub get_story {
@@ -401,14 +403,14 @@ sub build_newfile {
     push @filename, join("",map { "[$_]" } @{$file->{source}}) if scalar @{$file->{source}};
     push @filename, join(" ",map { "($_)" } sort @{$file->{actor}}) if scalar @{$file->{actor}};
     push @filename, join(" ",map { "{$_}" } @{$file->{story}}) if scalar @{$file->{story}};
-    push @filename, $file->{title} // undef;
+    push @filename, $file->{title} // ();
     if ($file->{duplicate}) {
         push @filename, $file->{duplicate};
         $file->{duplicate}++;
     }
-    push @filename, $file->{date} // undef;
-    push @filename, $file->{Resolution}? $file->{Resolution}."p" : undef;
-    $file->{newfile} = sprintf("%s.%s", join(" ", grep { defined $_ } @filename), $file->{filetype} // "");
+    push @filename, $file->{date} // ();
+    push @filename, $file->{Resolution}? $file->{Resolution}."p" : ();
+    $file->{newfile} = sprintf("%s.%s", join(" ", @filename), $file->{filetype} // "");
 }
 
 sub build_movepath {
@@ -432,7 +434,7 @@ sub move_clean {
         next if $file->{filepath} eq $dir."/".$file->{newfile};
         if ($options{keepboth}) {
             $file->{duplicate} = 1;
-            build_newfile($file) until ! -f $dir."/".$file->{newfile} && !grep {$_->{dir} ne $file->{dir} && $_->{newfile} ne $file->{newfile}} @LIST;
+            build_newfile($file) until ! -f $dir."/".$file->{newfile};
         }
         if (($options{overwrite} && $options{commit}) || ! -f $dir."/".$file->{newfile}) {
             if ($options{commit}) {
