@@ -45,13 +45,13 @@ Getopt::Long::GetOptions(
     "addsource=s"     => \@{$options{custom}{add}{source}},
     "addstory=s"      => \@{$options{custom}{add}{story}},
 
-    "actorlast"       => \$options{custom}{add}{lastactor},
-    "sourcelast"      => \$options{custom}{add}{lastsource},
-    "storylast"       => \$options{custom}{add}{laststroy},
+    "lastactor"       => \$options{custom}{add}{lastactor},
+    "lastsource"      => \$options{custom}{add}{lastsource},
+    "laststory"       => \$options{custom}{add}{laststroy},
 
-    "actorstatic"     => \$options{custom}{add}{staticactor},
-    "sourcestatic"    => \$options{custom}{add}{staticsource},
-    "storystatic"     => \$options{custom}{add}{staticstory},
+    "staticactor"     => \$options{custom}{add}{staticactor},
+    "staticsource"    => \$options{custom}{add}{staticsource},
+    "staticstory"     => \$options{custom}{add}{staticstory},
 
     "actor=s"         => \@{$options{filter}{actor}},
     "source=s"        => \@{$options{filter}{source}},
@@ -420,7 +420,7 @@ sub build_movepath {
     my @movepath;
     push @movepath, $file->{dir};
     push @movepath, scalar @{$file->{source}}? @{$file->{source}} : "Other";
-    push @movepath, ("#Actors",join(" & ", @{$file->{actor}})) if scalar @{$file->{actor}};
+    push @movepath, ("#Actors",join(" & ", sort @{$file->{actor}})) if scalar @{$file->{actor}};
     push @movepath, @{$file->{story}};
     $file->{dir} = join("/",@movepath);
 }
