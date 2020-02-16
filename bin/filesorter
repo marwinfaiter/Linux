@@ -108,8 +108,8 @@ exit;
 
 @LIST = find_files(@ARGV);
 
-get_actors($_) for @LIST;
 build_renamehash($_) for @LIST;
+get_actors(@LIST);
 
 @LIST = filter(@LIST);
 
@@ -235,9 +235,21 @@ sub filter {
 
 sub get_actors {
     logger("Collecting actors");
-    my $file = shift;
+    my @LIST = @_;
 
-    $renamedata{actors}{$_} = 1 for (grep { scalar (split(" ",$_)) > 1 } ($file->{newfile} =~ /\(([^()]+)\)/g));
+    foreach my $file (@LIST) {
+        $renamedata{actors}{$_} = 1 for (grep { scalar (split(" ",$_)) > 1 } $file->{newfile} =~ /\(([^()]+)\)/g);
+    }
+    foreach my $file (@LIST) {
+        my @filename = split(" ",$file->{newfile});
+        while (my $chunk = shift @filename) {
+            if ($filename[0] && $renamedata{actors}{"$chunk $filename[0]"}) {
+                $file->{newfile} =~ s/(\W)$chunk(\W)$filename[0](\W)/$1($chunk$2$filename[0])$3/ig;
+            }
+        }
+        push @{$file->{actor}}, $file->{newfile} =~ /\(([^()]+)\)/g;
+        $file->{newfile} =~ s/\([^()]+\)//g;
+    }
 }
 
 sub build_renamehash {
@@ -246,7 +258,6 @@ sub build_renamehash {
 
     get_source($file);
     get_filetype($file);
-    get_actor($file);
     get_story($file);
     get_quality($file);
     get_date($file);
@@ -287,20 +298,6 @@ sub get_source {
         }
     }
     $file->{newfile} =~ s/\[[^\[\]]+\]//ig;
-}
-
-sub get_actor {
-    logger("Parsing actor");
-    my $file = shift;
-
-    my @filename = split(" ",$file->{newfile});
-    while (my $chunk = shift @filename) {
-        if ($filename[0] && $renamedata{actors}{"$chunk $filename[0]"}) {
-            $file->{newfile} =~ s/([^(])$chunk(\W)$filename[0]([^)])/$1($chunk$2$filename[0])$3/ig;
-        }
-    }
-    push @{$file->{actor}}, $file->{newfile} =~ /\(([^()]+)\)/g;
-    $file->{newfile} =~ s/\([^()]+\)//g;
 }
 
 sub get_story {
