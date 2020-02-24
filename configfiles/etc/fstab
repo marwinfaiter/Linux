@@ -10,6 +10,7 @@ UUID=e3090d4f-3bf2-4f1c-a27d-0246899dc025 /               ext4    errors=remount
 # swap was on /dev/sda5 during installation
 #UUID=a678642d-f944-4cf1-9f7e-9cde0862dafe none            swap    sw              0       0
 
+/dev/disk/by-uuid/4ef4eab1-4057-4690-a415-bc5df9374deb /mnt/Meh auto nosuid,nodev,nofail,x-gvfs-show 0 0
 /dev/disk/by-uuid/c5d626a5-17f6-4bc5-8add-e9598aea5889 /mnt/Meh2 auto nosuid,nodev,nofail,x-gvfs-show 0 0
 /dev/disk/by-uuid/19e52f6c-5c4c-44ed-af3a-5e40afb24a37 /mnt/Meh3 auto nosuid,nodev,nofail,x-gvfs-show 0 0
 /dev/disk/by-uuid/a5c8a091-639e-4ded-a6a3-42a09329875b /mnt/Meh4 auto nosuid,nodev,nofail,x-gvfs-show 0 0
