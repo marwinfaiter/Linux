@@ -1,0 +1,16 @@
+[Unit]
+Description=Jotta Daemon
+Documentation=man:jottad
+After=network-online.target
+
+[Service]
+Type=simple
+User=marwinfaiter
+Group=marwinfaiter
+ExecStart=/usr/bin/jottad
+Restart=on-failure
+# Time to wait before forcefully stopped.
+TimeoutStopSec=300
+
+[Install]
+WantedBy=multi-user.target
