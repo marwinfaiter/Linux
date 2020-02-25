@@ -2,7 +2,8 @@ Emacs init file in org mode
 * Init
 #+begin_src emacs-lisp
   (setq inhibit-startup-message t)
-  (tool-bar-mode 1)
+  (tool-bar-mode -1)
+  (menu-bar-mode -1)
   (fset 'yes-or-no-p 'y-or-n-p)
   (global-set-key (kbd "<f5>") 'revert-buffer)
   (setq make-backup-files nil)
@@ -13,9 +14,10 @@ Emacs init file in org mode
 * Which key
 Help for key combinations
 #+begin_src emacs-lisp
-  (use-package which-key
-    :ensure t
-    :config (which-key-mode))
+    (use-package which-key
+      :ensure t
+      :config
+      (which-key-mode))
 #+end_src
 * Reveal.js
 Reveal.js for presentations
@@ -31,13 +33,37 @@ Reveal.js for presentations
 #+end_src
 * Evil Mode
 #+begin_src emacs-lisp
-  (add-to-list 'load-path "~/.emacs.d/evil")
-  (require 'evil)
+  (use-package evil
+  :config
   (global-evil-leader-mode)
-  (evil-mode 1)
+  (evil-mode 1))
 
+  (use-package evil-numbers
+  :config
   (global-set-key (kbd "C-c +") 'evil-numbers/inc-at-pt)
-  (global-set-key (kbd "C-c -") 'evil-numbers/dec-at-pt)
+  (global-set-key (kbd "C-c -") 'evil-numbers/dec-at-pt))
+
+  (use-package evil-surround
+  :ensure t)
+
+  (use-package evil-nerd-commenter
+  :ensure t)
+
+  (use-package evil-multiedit
+  :ensure t)
+
+  (use-package evil-leader
+  :ensure t)
+
+  (use-package evil-ediff
+  :ensure t)
+
+  (use-package evil-cleverparens
+  :ensure t)
+
+  (use-package doom-modeline
+  :ensure t
+  :init (doom-modeline-mode 1))
   #+end_src
 * Indenting
 #+begin_src emacs-lisp
@@ -67,22 +93,22 @@ Reveal.js for presentations
   :ensure t
   :config
   (add-hook 'prog-mode-hook #'rainbow-delimiters-mode))
-  ()
 
   (show-paren-mode 1)
 #+end_src
 * Line numbers
 #+begin_src emacs-lisp
-    (global-linum-mode)
+  (global-linum-mode)
 #+end_src
-* Org
+* Org-mode
 #+begin_src emacs-lisp
-    ;(require 'org-tempo)
-    (use-package org-bullets
-        :ensure t
-        :config
-        (add-hook 'org-mode-hook(lambda () (org-bullets-mode 1 ))))
-    (evil-define-key 'normal org-mode-map (kbd "TAB") #'org-cycle)
+  ;(require 'org-tempo)
+  (use-package org-bullets
+      :ensure t
+      :config
+      (add-hook 'org-mode-hook(lambda () (org-bullets-mode 1 ))))
+
+  (evil-define-key 'normal org-mode-map (kbd "TAB") #'org-cycle)
 #+end_src
 * Ediff
 #+begin_src emacs-lisp
@@ -103,13 +129,20 @@ Reveal.js for presentations
   '(aw-leading-char-face
       ((t (:inherit ace-jump-face-foreground :height 3.0)))))
   )
+
+  (use-package eyebrowse
+  :ensure t
+  :config
+  (eyebrowse-mode t)
+  (eyebrowse-setup-opinionated-keys))
 #+end_src
 * Neotree
 #+begin_src emacs-lisp
-  (use-package neotree
-  :bind ([f8] . neotree-toggle)
-  :config (setq neo-default-system-application "open"))
-  (setq-default neo-show-hidden-files t)
+    (use-package neotree
+    :bind ([f8] . neotree-toggle)
+    :config
+    (setq neo-default-system-application "open")
+    (setq-default neo-show-hidden-files t))
 #+end_src
 * Fast search
 #+begin_src emacs-lisp
@@ -133,7 +166,7 @@ Reveal.js for presentations
       (setq ivy-use-virtual-buffers t)
       (setq ivy-display-style 'fancy)
       (define-key read-expression-map (kbd "C-r") 'counsel-expression-history)
-  )
+      )
 #+end_src
 * Auto completion
 #+begin_src emacs-lisp
@@ -150,8 +183,9 @@ Reveal.js for presentations
 #+end_src
 * Multicursor
 #+begin_src emacs-lisp
-  (require 'evil-multiedit)
-  (evil-multiedit-default-keybinds)
+    (use-package evil-multiedit
+    :config
+    (evil-multiedit-default-keybinds))
 #+end_src
 * Magit
 #+begin_src emacs-lisp
@@ -165,8 +199,8 @@ Reveal.js for presentations
 #+end_src
 * Powerline
 #+begin_src emacs-lisp
-  (require 'powerline)
-  (powerline-evil-vim-color-theme)
+  ;(require 'powerline)
+  ;(powerline-evil-vim-color-theme)
   (setq evil-normal-state-tag "NORMAL")
   (setq evil-insert-state-tag "INSERT")
   (setq evil-visual-state-tag "VISUAL")

@@ -1,5 +1,6 @@
 (setq inhibit-startup-message t)
-(tool-bar-mode 1)
+(tool-bar-mode -1)
+(menu-bar-mode -1)
 (fset 'yes-or-no-p 'y-or-n-p)
 (global-set-key (kbd "<f5>") 'revert-buffer)
 (setq make-backup-files nil)
@@ -9,7 +10,8 @@
 
 (use-package which-key
   :ensure t
-  :config (which-key-mode))
+  :config
+  (which-key-mode))
 
 (use-package ox-reveal
 :ensure t)
@@ -20,13 +22,37 @@
 (use-package htmlize
    :ensure t)
 
-(add-to-list 'load-path "~/.emacs.d/evil")
-(require 'evil)
+(use-package evil
+:config
 (global-evil-leader-mode)
-(evil-mode 1)
+(evil-mode 1))
 
+(use-package evil-numbers
+:config
 (global-set-key (kbd "C-c +") 'evil-numbers/inc-at-pt)
-(global-set-key (kbd "C-c -") 'evil-numbers/dec-at-pt)
+(global-set-key (kbd "C-c -") 'evil-numbers/dec-at-pt))
+
+(use-package evil-surround
+:ensure t)
+
+(use-package evil-nerd-commenter
+:ensure t)
+
+(use-package evil-multiedit
+:ensure t)
+
+(use-package evil-leader
+:ensure t)
+
+(use-package evil-ediff
+:ensure t)
+
+(use-package evil-cleverparens
+:ensure t)
+
+(use-package doom-modeline
+:ensure t
+:init (doom-modeline-mode 1))
 
 (setq-default indent-tabs-mode nil)
 (setq-default tab-width 4)
@@ -52,7 +78,6 @@
 :ensure t
 :config
 (add-hook 'prog-mode-hook #'rainbow-delimiters-mode))
-()
 
 (show-paren-mode 1)
 
@@ -63,6 +88,7 @@
     :ensure t
     :config
     (add-hook 'org-mode-hook(lambda () (org-bullets-mode 1 ))))
+
 (evil-define-key 'normal org-mode-map (kbd "TAB") #'org-cycle)
 
 (custom-set-variables
@@ -81,10 +107,17 @@
     ((t (:inherit ace-jump-face-foreground :height 3.0)))))
 )
 
+(use-package eyebrowse
+:ensure t
+:config
+(eyebrowse-mode t)
+(eyebrowse-setup-opinionated-keys))
+
 (use-package neotree
 :bind ([f8] . neotree-toggle)
-:config (setq neo-default-system-application "open"))
-(setq-default neo-show-hidden-files t)
+:config
+(setq neo-default-system-application "open")
+(setq-default neo-show-hidden-files t))
 
 (use-package counsel
   :ensure t
@@ -106,7 +139,7 @@
     (setq ivy-use-virtual-buffers t)
     (setq ivy-display-style 'fancy)
     (define-key read-expression-map (kbd "C-r") 'counsel-expression-history)
-)
+    )
 
 (use-package auto-complete
 :ensure t
@@ -117,8 +150,9 @@
 
 (setq require-final-newline t)
 
-(require 'evil-multiedit)
-(evil-multiedit-default-keybinds)
+(use-package evil-multiedit
+:config
+(evil-multiedit-default-keybinds))
 
 (use-package magit
 :bind ("C-x g" . magit-status)
@@ -126,8 +160,8 @@
 
 (setq-default show-trailing-whitespace t)
 
-(require 'powerline)
-(powerline-evil-vim-color-theme)
+;(require 'powerline)
+;(powerline-evil-vim-color-theme)
 (setq evil-normal-state-tag "NORMAL")
 (setq evil-insert-state-tag "INSERT")
 (setq evil-visual-state-tag "VISUAL")
