@@ -6,9 +6,11 @@ Emacs init file in org mode
   (menu-bar-mode -1)
   (fset 'yes-or-no-p 'y-or-n-p)
   (global-set-key (kbd "<f5>") 'revert-buffer)
+
   (setq make-backup-files nil)
   (use-package saveplace
       :init (save-place-mode))
+      :ensure t
   (setq auto-save-default nil)
 #+end_src
 * Which key
@@ -88,8 +90,9 @@ Reveal.js for presentations
   ;(require 'autopair)
   ;(autopair-global-mode) ;; enable autopair in all buffers
   (use-package smartparens-config
-    :ensure smartparens
-  :config (progn (show-smartparens-global-mode t)))
+  :ensure smartparens
+  :config
+  (show-smartparens-global-mode t))
 
   (add-hook 'prog-mode-hook 'turn-on-smartparens-strict-mode)
   (add-hook 'markdown-mode-hook 'turn-on-smartparens-strict-mode)
@@ -144,6 +147,7 @@ Reveal.js for presentations
 * Neotree
 #+begin_src emacs-lisp
     (use-package neotree
+    :ensure t
     :bind ([f8] . neotree-toggle)
     :config
     (setq neo-default-system-application "open")
@@ -189,14 +193,16 @@ Reveal.js for presentations
 * Multicursor
 #+begin_src emacs-lisp
     (use-package evil-multiedit
+    :ensure t
     :config
     (evil-multiedit-default-keybinds))
 #+end_src
 * Magit
 #+begin_src emacs-lisp
-  (use-package magit
-  :bind ("C-x g" . magit-status)
-  :ensure t)
+    (use-package magit
+    :ensure t
+    :bind
+    ("C-x g" . magit-status))
 #+end_src
 * Whitespace
 #+begin_src emacs-lisp

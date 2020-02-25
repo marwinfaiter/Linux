@@ -3,9 +3,11 @@
 (menu-bar-mode -1)
 (fset 'yes-or-no-p 'y-or-n-p)
 (global-set-key (kbd "<f5>") 'revert-buffer)
+
 (setq make-backup-files nil)
 (use-package saveplace
     :init (save-place-mode))
+    :ensure t
 (setq auto-save-default nil)
 
 (use-package which-key
@@ -73,8 +75,9 @@
 ;(require 'autopair)
 ;(autopair-global-mode) ;; enable autopair in all buffers
 (use-package smartparens-config
-  :ensure smartparens
-:config (progn (show-smartparens-global-mode t)))
+:ensure smartparens
+:config
+(show-smartparens-global-mode t))
 
 (add-hook 'prog-mode-hook 'turn-on-smartparens-strict-mode)
 (add-hook 'markdown-mode-hook 'turn-on-smartparens-strict-mode)
@@ -119,6 +122,7 @@
 (eyebrowse-setup-opinionated-keys))
 
 (use-package neotree
+:ensure t
 :bind ([f8] . neotree-toggle)
 :config
 (setq neo-default-system-application "open")
@@ -156,12 +160,14 @@
 (setq require-final-newline t)
 
 (use-package evil-multiedit
+:ensure t
 :config
 (evil-multiedit-default-keybinds))
 
 (use-package magit
-:bind ("C-x g" . magit-status)
-:ensure t)
+:ensure t
+:bind
+("C-x g" . magit-status))
 
 (setq-default show-trailing-whitespace t)
 
