@@ -23,17 +23,21 @@
    :ensure t)
 
 (use-package evil
+:ensure t
 :config
 (global-evil-leader-mode)
 (evil-mode 1))
 
 (use-package evil-numbers
+:ensure t
 :config
 (global-set-key (kbd "C-c +") 'evil-numbers/inc-at-pt)
 (global-set-key (kbd "C-c -") 'evil-numbers/dec-at-pt))
 
 (use-package evil-surround
-:ensure t)
+:ensure t
+:config
+(global-evil-surround-mode 1))
 
 (use-package evil-nerd-commenter
 :ensure t)
@@ -52,13 +56,19 @@
 
 (use-package doom-modeline
 :ensure t
-:init (doom-modeline-mode 1))
+:init
+(doom-modeline-mode 1))
 
 (setq-default indent-tabs-mode nil)
 (setq-default tab-width 4)
 (setq indent-line-function 'insert-tab)
+
 (define-key evil-insert-state-map (kbd "TAB") 'tab-to-tab-stop)
-(auto-indent-global-mode)
+
+(use-package auto-indent-mode
+:ensure t
+:config
+(auto-indent-global-mode))
 
 ;(require 'autopair)
 ;(autopair-global-mode) ;; enable autopair in all buffers
@@ -68,11 +78,6 @@
 
 (add-hook 'prog-mode-hook 'turn-on-smartparens-strict-mode)
 (add-hook 'markdown-mode-hook 'turn-on-smartparens-strict-mode)
-
-(use-package evil-surround
-:ensure t
-:config
-(global-evil-surround-mode 1))
 
 (use-package rainbow-delimiters
 :ensure t
