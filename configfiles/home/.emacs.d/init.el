@@ -31,7 +31,7 @@
     ("#CC9393" "#DFAF8F" "#F0DFAF" "#7F9F7F" "#BFEBBF" "#93E0E3" "#94BFF3" "#DC8CC3")))
  '(package-selected-packages
    (quote
-    (spacemacs-theme which-key toc-org smooth-scrolling rainbow-delimiters quelpa-use-package projectile paradox ox-reveal org-bullets neotree molokai-theme magit ido-completing-read+ htmlize eyebrowse evil-surround evil-org evil-numbers evil-nerd-commenter evil-multiedit evil-leader evil-ediff evil-cleverparens doom-themes doom-modeline counsel company auto-indent-mode auto-complete auto-compile ace-window)))
+    (multi-line spacemacs-theme which-key toc-org smooth-scrolling rainbow-delimiters quelpa-use-package projectile paradox ox-reveal org-bullets neotree molokai-theme magit ido-completing-read+ htmlize eyebrowse evil-surround evil-org evil-numbers evil-nerd-commenter evil-multiedit evil-leader evil-ediff evil-cleverparens doom-themes doom-modeline counsel company auto-indent-mode auto-complete auto-compile ace-window)))
  '(paradox-github-token t)
  '(projectile-switch-project-action (quote neotree-projectile-action))
  '(read-buffer-completion-ignore-case t)
@@ -65,4 +65,5 @@
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- '(aw-leading-char-face ((t (:inherit ace-jump-face-foreground :height 3.0)))))
+ '(aw-leading-char-face ((t (:inherit ace-jump-face-foreground :height 3.0))))
+ '(org-bullet-face ((t (:foreground "burlywood" :weight normal :height 1.5)))))

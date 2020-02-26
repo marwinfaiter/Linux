@@ -88,15 +88,98 @@
 (eyebrowse-mode t)
 (eyebrowse-setup-opinionated-keys))
 #+END_SRC
-* Cperl
-#+BEGIN_SRC emacs-lisp
-(use-package cperl-mode
-:ensure t
-:mode "\\.p[lm]\\'"
-:interpreter "perl"
-:config
-(setq cperl-hairy t))
-#+END_SRC
+* Coding
+*** Cperl setup
+  #+BEGIN_SRC emacs-lisp
+  (use-package cperl-mode
+  :ensure t
+  :mode "\\.p[lm]\\'"
+  :interpreter "perl"
+  :config
+  (setq cperl-hairy t))
+  (require 'perl-find-library)
+  (setq cperl-indent-level 4
+          cperl-close-paren-offset -4
+          cperl-continued-statement-offset 4
+          cperl-indent-parens-as-block t
+          cperl-tab-always-indent t)
+  #+END_SRC
+*** Perl Outline-mode settings
+***** Keybindings
+    #+BEGIN_SRC emacs-lisp
+    ; Outline-minor-mode key map
+    (define-prefix-command 'cm-map nil "Outline-")
+    ; HIDE
+    (define-key cm-map "q" 'hide-sublevels)    ; Hide everything but the top-level headings
+    (define-key cm-map "t" 'hide-body)         ; Hide everything but headings (all body lines)
+    (define-key cm-map "o" 'hide-other)        ; Hide other branches
+    (define-key cm-map "c" 'hide-entry)        ; Hide this entry's body
+    (define-key cm-map "l" 'hide-leaves)       ; Hide body lines in this entry and sub-entries
+    (define-key cm-map "d" 'hide-subtree)      ; Hide everything in this entry and sub-entries
+    ; SHOW
+    (define-key cm-map "a" 'show-all)          ; Show (expand) everything
+    (define-key cm-map "e" 'show-entry)        ; Show this heading's body
+    (define-key cm-map "i" 'show-children)     ; Show this heading's immediate child sub-headings
+    (define-key cm-map "k" 'show-branches)     ; Show all sub-headings under this heading
+    (define-key cm-map "s" 'show-subtree)      ; Show (expand) everything in this heading & below
+    ; MOVE
+    (define-key cm-map "u" 'outline-up-heading)                ; Up
+    (define-key cm-map "n" 'outline-next-visible-heading)      ; Next
+    (define-key cm-map "p" 'outline-previous-visible-heading)  ; Previous
+    (define-key cm-map "f" 'outline-forward-same-level)        ; Forward - same level
+    (define-key cm-map "b" 'outline-backward-same-level)       ; Backward - same level
+    (global-set-key "\M-o" cm-map)
+    #+END_SRC
+***** Set hierarchy
+    #+BEGIN_SRC emacs-lisp
+    (defmacro join (join-char &rest others) `(mapconcat 'identity ',others ,join-char))
+    (setq my-cperl-outline-regexp
+      (concat
+       "^"                              ; Start of line
+       "[ \\t]*"                        ; Skip leading whitespace
+       "\\("                            ; begin capture group \1
+       (join "\\|"
+             "=head[12]"                  ; POD header
+             "package"                    ; package
+             "=item"                      ; POD item
+             "sub"                        ; subroutine definition
+           )
+       "\\)"                            ; end capture group \1
+       "\\b"                            ; Word boundary
+       ))
+    #+END_SRC
+***** Replace package code
+    #+BEGIN_SRC emacs-lisp
+    (setq cperl-mode-hook 'my-cperl-customizations)
+
+    (defun my-cperl-customizations ()
+    "cperl-mode customizations that must be done after cperl-mode loads"
+      (outline-minor-mode)
+      (abbrev-mode)
+
+      (defun cperl-outline-level ()
+      (looking-at outline-regexp)
+      (let ((match (match-string 1)))
+        (cond
+         ((eq match "=head1" ) 1)
+         ((eq match "package") 2)
+         ((eq match "=head2" ) 3)
+         ((eq match "=item"  ) 4)
+         ((eq match "sub"    ) 5)
+         (t 7)
+      )))
+
+      (setq cperl-outline-regexp  my-cperl-outline-regexp)
+      (setq outline-regexp        cperl-outline-regexp)
+      (setq outline-level        'cperl-outline-level)
+    )
+    #+END_SRC
+  #+END_SRC
+*** Multi-line
+  #+BEGIN_SRC emacs-lisp
+  (use-package multi-line
+  :ensure t)
+  #+END_SRC
 * Ediff
 #+BEGIN_SRC emacs-lisp
 (custom-set-variables
@@ -136,7 +219,9 @@
 :ensure t)
 
 (use-package evil-cleverparens
-:ensure t)
+:ensure t
+:config
+(evil-cleverparens-mode 1))
 
 (use-package doom-modeline
 :ensure t
@@ -429,12 +514,7 @@ A package for handling project specific actions
 * Smartparens for coding
 #+BEGIN_SRC emacs-lisp
 (use-package smartparens-config
-:ensure smartparens
-:config
-(show-smartparens-global-mode t))
-
-(add-hook 'prog-mode-hook 'turn-on-smartparens-mode)
-(add-hook 'markdown-mode-hook 'turn-on-smartparens-mode)
+:ensure smartparens)
 
 (use-package rainbow-delimiters
 :ensure t
