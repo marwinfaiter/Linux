@@ -45,28 +45,30 @@ def id(anime):
     if match: return match.group(1)
 
 def episodes(anime):
-  episodehash = {}
-  i = 0
-  response = requests.post("https://horriblesubs.info/api.php?method=getshows&type=batch&showid="+anime)
-  while True:
-    if i == 0:b = "B"
-    else: b= ""
-    if response.content.decode() == "DONE":break
-    soup = BeautifulSoup(response.content.decode(),'html.parser')
-    for div in soup.find_all("div",class_="rls-info-container"):
-      episodehash[b+re.sub("^0*","",div.get("id"))] = {}
-      for link in div.find_all("div",class_="rls-link"):
-        episodehash[b+re.sub("^0*","",div.get("id"))][re.sub("\d+-|p","",link.get("id"))] = link.find("a",{"title":"Magnet Link"}).get("href")
-    response = requests.post("https://horriblesubs.info/api.php?method=getshows&type=show&showid="+anime+"&nextid="+str(i))
-    i += 1
-  temp = [k for k in episodehash.keys()]
-  episodehash = {k:episodehash[k] for k in reversed(temp)}
-  print("Available episodes: ")
-  print ("="*40)
-  for episode,quality in episodehash.items():
-    print(str(episode)+": "+str("p, ".join([str(i) for i in quality.keys()]))+"p")
-  print ("="*40)
-  return episodehash
+    episodehash = {}
+    i = 0
+    response = requests.post("https://horriblesubs.info/api.php?method=getshows&type=batch&showid="+anime)
+    while True:
+        if i == 0:b = "B"
+        else: b= ""
+        if response.content.decode() == "DONE":break
+        soup = BeautifulSoup(response.content.decode(),'html.parser')
+        for div in soup.find_all("div",class_="rls-info-container"):
+            episode = b+re.sub("^0*","",div.get("id"))
+            episodehash[episode] = {}
+            for link in div.find_all("div",class_="rls-link"):
+                if link.find("a",{"title":"Magnet Link"}):
+                    episodehash[episode][re.sub("\d+-|p","",link.get("id"))] = link.find("a",{"title":"Magnet Link"}).get("href")
+        response = requests.post("https://horriblesubs.info/api.php?method=getshows&type=show&showid="+anime+"&nextid="+str(i))
+        i += 1
+    temp = [k for k in episodehash.keys()]
+    episodehash = {k:episodehash[k] for k in reversed(temp)}
+    print("Available episodes: ")
+    print ("="*40)
+    for episode,quality in episodehash.items():
+        print(str(episode)+": "+str("p, ".join([str(i) for i in quality.keys()]))+"p")
+    print ("="*40)
+    return episodehash
 
 def episodeparser(episodelist):
   array = episodelist.split(",")
@@ -92,7 +94,9 @@ def qualityparser(episodes,quality):
   if quality != "":quality = quality.replace("p","")
   qualities = {}
   for i in episodes:
-    if quality == "":
+    if len(episodehash[i]) == 0:
+        pass
+    elif quality == "":
       qualities[i] = {}
       qualities[i][list(episodehash[i].keys())[-1]] = episodehash[i][list(episodehash[i].keys())[-1]]
     elif quality in episodehash[i].keys():
