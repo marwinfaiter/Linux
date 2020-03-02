@@ -46,7 +46,8 @@ values."
      evil-commentary
      evil-snipe
      games
-     git
+     (git :variables
+          git-magit-status-fullscreen t)
      github
      helm
      html
