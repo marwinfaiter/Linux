@@ -55,7 +55,7 @@ def episodes(anime):
         soup = BeautifulSoup(response.content.decode(),'html.parser')
         for div in soup.find_all("div",class_="rls-info-container"):
             episode = b+re.sub("^0*","",div.get("id"))
-            if episode == "": continue
+            if episode == "" or (b != "B" and not re.match("^\d+$", episode)): continue
             episodehash[episode] = {}
             if b == "B": episodehash[episode]["batch"] = True
             for link in div.find_all("div",class_="rls-link"):
