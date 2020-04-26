@@ -55,19 +55,29 @@ def episodes(anime):
         soup = BeautifulSoup(response.content.decode(),'html.parser')
         for div in soup.find_all("div",class_="rls-info-container"):
             episode = b+re.sub("^0*","",div.get("id"))
+            if episode == "": continue
             episodehash[episode] = {}
+            if b == "B": episodehash[episode]["batch"] = True
             for link in div.find_all("div",class_="rls-link"):
                 if link.find("a",{"title":"Magnet Link"}):
                     episodehash[episode][re.sub("\d+-|p","",link.get("id"))] = link.find("a",{"title":"Magnet Link"}).get("href")
         response = requests.post("https://horriblesubs.info/api.php?method=getshows&type=show&showid="+anime+"&nextid="+str(i))
         i += 1
-    temp = [k for k in episodehash.keys()]
-    episodehash = {k:episodehash[k] for k in reversed(temp)}
+
+    nobatch = {k:episodehash[k] for k in episodehash if "batch" not in episodehash[k]}
+    nobatch = {k:nobatch[k] for k in sorted(nobatch.keys(), key=int)}
+
+    batch = {k:episodehash[k] for k in episodehash if "batch" in episodehash[k]}
+    batch = {k:batch[k] for k in sorted(batch.keys())}
+
+    episodehash = {**nobatch, **batch}
+
     print("Available episodes: ")
     print ("="*40)
     for episode,quality in episodehash.items():
         print(str(episode)+": "+str("p, ".join([str(i) for i in quality.keys()]))+"p")
     print ("="*40)
+
     return episodehash
 
 def episodeparser(episodelist):
