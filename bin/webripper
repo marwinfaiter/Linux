@@ -21,11 +21,14 @@ def search(source):
     with open(source) as f:
         url = f.readline()
         while url:
-            url = url.strip()
-            response = requests.post(url, headers={"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 Safari/537.36"})
-            if not response: continue
-            soup = BeautifulSoup(response.content.decode("latin-1"),'html.parser')
-            searchdict[url] = []
+            if re.search("\.m3u8", url):
+                searchdict[url.strip()] = {"dir": None, "filename": None}
+                lasturl = url.strip()
+            elif re.match("\s+", url):
+                (key, value) = url.strip().split("=")
+                searchdict[lasturl][key] = value
+            else:
+                searchdict[url.strip()] = []
             url = f.readline()
     return searchdict
 
@@ -42,18 +45,27 @@ def get_media_url(url):
     iframe = soup.find("iframe")
     if iframe and re.search("gounlimited",iframe["src"]):
         searchdict[iframe["src"]] = get_media_url(iframe["src"])
+
     return mediaurls
 
 def download_media(searchdict):
     for url in searchdict:
-        for media in searchdict[url]:
-            r = requests.get(media, headers={'referer': url, "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 Safari/537.36"})
-            if not r: continue
-            filename = media.split("/")[-1].split("?")[0]
-            filename = input("Save file as[" + filename + "](" + url + "): ") or filename
-            filepath = (options.dir or ".") + "/" + filename
-            open(filepath,"wb").write(r.content)
-            print("Download Complete(%s/%s): %s" % (searchdict[url].index(media)+1,len(searchdict[url]),filepath))
+        if re.search("\.m3u8", url):
+            searchdict[url]["dir"] = searchdict[url]["dir"] or options.dir or ".",
+            searchdict[url]["filename"] = searchdict[url]["filename"] or input("Save file(" + url + "): "),
+
+            filepath = searchdict[url]["dir"][0] + "/" + searchdict[url]["filename"][0]
+            subprocess.run(["ffmpeg","-i",url,"-c","copy",filepath],stdout=subprocess.DEVNULL)
+            print("Download Complete: %s" % (filepath))
+        else:
+            for media in searchdict[url]:
+                r = requests.get(media, headers={'referer': url, "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 Safari/537.36"})
+                if not r: continue
+                filename = media.split("/")[-1].split("?")[0]
+                filename = input("Save file as[" + filename + "](" + url + "): ") or filename
+                filepath = (options.dir or ".") + "/" + filename
+                open(filepath,"wb").write(r.content)
+                print("Download Complete(%s/%s): %s" % (searchdict[url].index(media)+1,len(searchdict[url]),filepath))
 
 
 usage = "Usage: %prog [options] args"
@@ -68,8 +80,9 @@ if options.source == None:
 
 searchdict = search(options.source)
 for url in searchdict:
-    print("Handling and downloading: %s" % (url))
-    searchdict[url] = get_media_url(url)
+    print("Getting media urls: %s" % (url))
+    if not re.search("\.m3u8", url):
+        searchdict[url] = get_media_url(url)
 download_media(searchdict)
 
 sys.exit("DONE!")
