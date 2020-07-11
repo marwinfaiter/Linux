@@ -86,11 +86,13 @@ def episodeparser(episodelist):
     for row in [row for row in episodehash.keys() if re.match("B",row)]:del episodehash[row]
     array[0] = str(list(episodehash.keys())[0]) + "-" + str(list(episodehash.keys())[-1])
   episodes = []
+  for row in [row for row in array if re.match("B",row)]:
+    episodes.append(row)
+    del array[row]
+  for row in [row for row in episodehash.keys() if re.match("B",row)]:
+    del episodehash[row]
   for row in array:
-    if re.match("B\d*-\d*",row):
-      episodes.append(row)
-      continue
-    elif re.match("\d*-\d*",row):
+    if re.match("\d*-\d*",row):
       (x,y) = row.split("-")
       if not x:x = list(episodehash.keys())[0]
       if not y:y = list(episodehash.keys())[-1]
