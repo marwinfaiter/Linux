@@ -45,37 +45,44 @@ def id(anime):
     if match: return match.group(1)
 
 def episodes(anime):
-    episodehash = {}
+    episodehash = {
+            "batch": [],
+            "nobatch": []
+    }
     i = 0
     response = requests.post("https://horriblesubs.info/api.php?method=getshows&type=batch&showid="+anime)
     while True:
-        if i == 0:b = "B"
-        else: b= ""
         if response.content.decode() == "DONE":break
         soup = BeautifulSoup(response.content.decode(),'html.parser')
         for div in soup.find_all("div",class_="rls-info-container"):
-            episode = b+re.sub("^0*","",div.get("id"))
-            if episode == "" or (b != "B" and not re.match("^\d+$", episode)): continue
-            episodehash[episode] = {}
-            if b == "B": episodehash[episode]["batch"] = True
-            for link in div.find_all("div",class_="rls-link"):
+            episode = re.sub("^0*","",div.get("id"))
+            if episode == "": continue
+            if i == 0 and not re.match("^\d+-\d+$", episode): continue
+            elif i > 0 and not re.match("^\d+$", episode): continue
+
+            subhash = {
+                "id": episode,
+                "quality": {}
+            }
+
+            for link in div.find_all("div", class_="rls-link"):
                 if link.find("a",{"title":"Magnet Link"}):
-                    episodehash[episode][re.sub("\d+-|p","",link.get("id"))] = link.find("a",{"title":"Magnet Link"}).get("href")
+                    subhash["quality"][re.sub("\d+-|p","",link.get("id"))] = link.find("a",{"title":"Magnet Link"}).get("href")
+            if i == 0:
+                episodehash["batch"].append(subhash)
+            else:
+                episodehash["nobatch"].append(subhash)
         response = requests.post("https://horriblesubs.info/api.php?method=getshows&type=show&showid="+anime+"&nextid="+str(i))
         i += 1
 
-    nobatch = {k:episodehash[k] for k in episodehash if "batch" not in episodehash[k]}
-    nobatch = {k:nobatch[k] for k in sorted(nobatch.keys(), key=int)}
-
-    batch = {k:episodehash[k] for k in episodehash if "batch" in episodehash[k]}
-    batch = {k:batch[k] for k in sorted(batch.keys())}
-
-    episodehash = {**nobatch, **batch}
+    episodehash["batch"] = [k for k in sorted(episodehash["batch"], key=lambda i:i["id"])]
+    episodehash["nobatch"] = [k for k in sorted(episodehash["nobatch"], key=lambda i:int(i["id"]))]
 
     print("Available episodes: ")
     print ("="*40)
-    for episode,quality in episodehash.items():
-        print(str(episode)+": "+str("p, ".join([str(i) for i in quality.keys()]))+"p")
+    for array in ("batch", "nobatch"):
+        for episode in episodehash[array]:
+            print(episode["id"] + ": " + ", ". join(map(lambda x: str(x+"p"), episode["quality"].keys())) )
     print ("="*40)
 
     return episodehash
@@ -118,11 +125,12 @@ def qualityparser(episodes,quality):
   return qualities
 
 def download(confirm,quality):
-  if confirm.lower() != "yes":return
-  array = ["deluge-console","add"]
-  for key,value in quality.items():
-    array.append(list(value.values())[0])
-  subprocess.run(array)
+    pass
+  #if confirm.lower() != "yes":return
+  #array = ["deluge-console","add"]
+  #for key,value in quality.items():
+  #  array.append(list(value.values())[0])
+  #subprocess.run(array)
 
 search(' '.join(sys.argv[1:]))
 episodehash = episodes(id(input("Which anime do you want to download?[1] ") or 1))
