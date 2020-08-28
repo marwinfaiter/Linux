@@ -13,6 +13,7 @@ my %renamedata;
 my $count = 1;
 $|++;
 $Data::Dumper::Indent = 1;
+$Data::Dumper::Sortkeys = 1;
 
 Getopt::Long::GetOptions(
     "help"            => \&help,
@@ -108,7 +109,7 @@ exit;
 
 @LIST = find_files(@ARGV);
 
-build_renamehash($_) for @LIST;
+build_renamehash(@LIST);
 get_actors(@LIST);
 
 @LIST = filter(@LIST);
@@ -117,19 +118,16 @@ do { custom_data($_); build_newfile($_); build_movepath($_) } for @LIST;
 
 if ($options{list} || $options{dump} || $options{delete}) {
     foreach my $file (@LIST) {
-        if ($options{dump}) {
-            print Dumper $file;
-        }
-        elsif ($options{list}) {
+        if ($options{list}) {
             my $temptree = \%filetree;
             my @movepath = split("/",$file->{filepath});
             pop @movepath;
             while (my $folder = shift @movepath) {
                 if (scalar @movepath == 0) {
-                    $temptree->{$folder}{$file->{orgfile}} = undef;
+                    $temptree->{$folder}{$file->{orgfile}} = 1;
                 }
                 else {
-                    $temptree->{$folder} = {} if !$temptree->{$folder};
+                    $temptree->{$folder} ||= {};
                     $temptree = $temptree->{$folder}
                 }
             }
@@ -145,6 +143,9 @@ if ($options{list} || $options{dump} || $options{delete}) {
     }
     if ($options{list}) {
         print Dumper \%filetree;
+    }
+    elsif ($options{dump}) {
+        print Dumper \@LIST;
     }
     elsif($options{delete} && $options{commit}) {
         system sprintf("find $_ -empty -delete") for @ARGV;
@@ -240,29 +241,35 @@ sub get_actors {
     foreach my $file (@LIST) {
         $renamedata{actors}{$_} = 1 for (grep { scalar (split(" ",$_)) > 1 } $file->{newfile} =~ /\(([^()]+)\)/g);
     }
-    foreach my $file (@LIST) {
-        my @filename = split(" ",$file->{newfile});
-        while (my $chunk = shift @filename) {
-            if ($filename[0] && $renamedata{actors}{"$chunk $filename[0]"}) {
-                $file->{newfile} =~ s/(\W)$chunk(\W)$filename[0](\W)/$1($chunk$2$filename[0])$3/ig;
-            }
+
+    foreach my $n (0..$#LIST) {
+        my $file = $LIST[$n];
+        foreach my $actor ( (grep { $file->{newfile} =~ /\W$_\W/i } keys %{$renamedata{actors}}, $file->{newfile} =~ /\(([^()]+)\)/g) ) {
+            push @{$file->{actor}}, $actor;
+            $file->{newfile} =~ s/(\W)$actor(\W)/$1$2/ig;
         }
-        push @{$file->{actor}}, $file->{newfile} =~ /\(([^()]+)\)/g;
-        $file->{newfile} =~ s/\([^()]+\)//g;
+        $file->{newfile} =~ s/\(|\)//g;
+        printf("%-25s => %d/%d (%.2f%%)\r", (caller(0))[3], $n+1, scalar @LIST, ($n+1)*100/scalar @LIST);
     }
+    print "\n";
 }
 
 sub build_renamehash {
-    my $file = shift;
-    logger("Building filehash: ".$file->{filepath});
+    logger("Building filehash");
+    my @LIST = @_;
 
-    get_source($file);
-    get_filetype($file);
-    get_story($file);
-    get_quality($file);
-    get_date($file);
-    printf("%d/%d (%.2f%%)\r", $count, scalar @LIST, $count*100/scalar @LIST);
-    $count++;
+    foreach my $n (0..$#LIST) {
+        my $file = $LIST[$n];
+
+        get_source($file);
+        get_filetype($file);
+        get_story($file);
+        get_quality($file);
+        get_date($file);
+
+        printf("%-25s => %d/%d (%.2f%%)\r", (caller(0))[3], $n+1, scalar @LIST, ($n+1)*100/scalar @LIST);
+    }
+    print "\n";
 }
 
 sub get_filetype {
