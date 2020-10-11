@@ -4,6 +4,7 @@ use strict;
 use Data::Dumper;
 use Getopt::Long;
 use Term::ANSIColor;
+use Mediainfo;
 
 my %options;
 my %filetree;
@@ -319,25 +320,31 @@ sub get_quality {
     my $file = shift;
     logger("Parsing/Extracting quality");
 
+    next unless $file->{filetype};
+
     if (!$file->{duplicate} && !$options{forcemediainfo} && $file->{newfile} =~ /(\W|^)(\d{3,4})p(\W|$)/i) {
         $file->{Resolution} = $2;
     }
     elsif (!$file->{Duration} || !$file->{Resolution} || !$file->{Bitrate}) {
-        my %attrs = (
-            Resolution => "\\d{3,4}x(\\d{3,4})",
-            Duration => "Duration: (\\d{2}:\\d{2}:\\d{2})",
-            Bitrate => "bitrate: (\\d+)",
-        );
-        chomp(my @mediainfo = `ffmpeg -i "$file->{filepath}" 2>&1 | egrep "Duration|Video:"`);
-        foreach my $attr (keys %attrs) {
-            join(" ",@mediainfo) =~ /$attrs{$attr}/;
-            if ($1) {
-                $file->{$attr} = $1;
-                delete $file->{$attr} if $file->{$attr} !~ /^[0-9:?]+$/;
+        my %mediainfo;
+        my $section = "";
+        chomp(my @data = `mediainfo "$file->{filepath}"`);
+        foreach my $row (@data) {
+            if ($row !~ /:/) {
+                $section = $row;
+                next;
             }
-            elsif ($file->{filetype} !~ /^(jpg|png|gif|jpeg)$/i) {
-                push @{$file->{error}}, $attr.": Failed to extract";
-            }
+            my ($key, $value) = split(/\s*:\s*/, $row, 2);
+            $mediainfo{$section}{$key} = $value;
+        }
+        if ($mediainfo{Image}) {
+            ($file->{Resolution}) = $mediainfo{Image}{Height} =~ /([0-9 ]+)/;
+        }
+        elsif ($mediainfo{Video}) {
+            ($file->{Resolution}) = $mediainfo{Video}{Height} =~ /(\d+\s*\d*)/;
+            $file->{Resolution} =~ s/\s+//g;
+            ($file->{Bitrate}) = $mediainfo{Video}{"Bit rate"};
+            ($file->{Duration}) = $mediainfo{Video}{"Duration"};
         }
     }
     if (!$file->{duplicate}) {
