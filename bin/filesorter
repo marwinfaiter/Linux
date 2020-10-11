@@ -326,25 +326,12 @@ sub get_quality {
         $file->{Resolution} = $2;
     }
     elsif (!$file->{Duration} || !$file->{Resolution} || !$file->{Bitrate}) {
-        my %mediainfo;
-        my $section = "";
-        chomp(my @data = `mediainfo "$file->{filepath}"`);
-        foreach my $row (@data) {
-            if ($row !~ /:/) {
-                $section = $row;
-                next;
-            }
-            my ($key, $value) = split(/\s*:\s*/, $row, 2);
-            $mediainfo{$section}{$key} = $value;
-        }
-        if ($mediainfo{Image}) {
-            ($file->{Resolution}) = $mediainfo{Image}{Height} =~ /([0-9 ]+)/;
-        }
-        elsif ($mediainfo{Video}) {
-            ($file->{Resolution}) = $mediainfo{Video}{Height} =~ /(\d+\s*\d*)/;
-            $file->{Resolution} =~ s/\s+//g;
-            ($file->{Bitrate}) = $mediainfo{Video}{"Bit rate"};
-            ($file->{Duration}) = $mediainfo{Video}{"Duration"};
+        my $mediainfo;
+        eval { $mediainfo  = Mediainfo->new(filename => $file->{filepath}) };
+        $file->{Resolution} = $mediainfo->{height};
+        if ($mediainfo->{video_length} && $mediainfo->{video_bitrate}) {
+            $file->{Bitrate}    = sprintf("%.2f Mbit/s", $mediainfo->{video_bitrate} / 1000000);
+            $file->{Duration}   = sprintf("%dm %ds", $mediainfo->{video_length} / 60000, $mediainfo->{video_length} / 1000 % 60);
         }
     }
     if (!$file->{duplicate}) {
