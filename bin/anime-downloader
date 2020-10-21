@@ -22,13 +22,17 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 parser = OptionParser(
+    usage="%prog [options] anime",
     description="Script to scrape websites for torrents/magnet links then adds them to deluge",
-    epilog="Written by Martin Falkmer"
+    epilog="Written by Marwinfaiter"
 )
 
 parser.add_option("-p", "--provider", dest="provider", help="Which provider to use [horriblesubs, erai_raws] default is erai_raws", default="erai_raws")
+parser.add_option("-a", "--all", dest="all", help="List all available animes", action="store_true")
 
 (options, args) = parser.parse_args()
+
+if not options.all and not len(args): sys.exit(parser.print_help())
 
 try:
     anime_downloader = AD(options.provider, ' '.join(args))
