@@ -1,174 +1,40 @@
-#!/usr/local/bin/python3.7
+#!/usr/local/bin/python3.7 -B
 
-import requests
 import json
-from bs4 import BeautifulSoup
 import re
 import time
 import os
-import sys
 import subprocess
 import signal
+import sys
+from optparse import OptionParser
 
-if len(sys.argv) == 1 or "--help" in sys.argv:
-    print("Script to download animes from HorribleSubs")
-    print("Usage: %s <animename>" % sys.argv[0])
-    sys.exit(0)
+pythonlib = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib', 'python'))
+if not pythonlib in sys.path:
+    sys.path.insert(1, pythonlib)
+del pythonlib
 
-searchhash = {}
+from Webscraper.Anime_downloader import Anime_downloader as AD
 
 def signal_handler(sig, frame):
         print('\nAborting script!')
         sys.exit(0)
 signal.signal(signal.SIGINT, signal_handler)
 
-def search(anime):
-    response = requests.post("https://horriblesubs.info/shows/")
-    soup = BeautifulSoup(response.content.decode(),'html.parser')
-    print ("="*40)
-    count = 0;
-    for row in soup.find_all("div", class_="ind-show"):
-        link = BeautifulSoup(row.decode(),'html.parser').find("a")
-        if re.match(".*"+anime+".*",link["title"], re.I):
-            count += 1
-            searchhash[count] = link["href"]
-            print ("[%s]: %s" % (count,link["title"]))
-    if count == 0:sys.exit("No anime found!")
-    print ("="*40)
+parser = OptionParser(
+    description="Script to scrape websites for torrents/magnet links then adds them to deluge",
+    epilog="Written by Martin Falkmer"
+)
 
-def id(anime):
-    response = requests.post("https://horriblesubs.info"+searchhash[int(anime)])
-    soup = BeautifulSoup(response.content.decode(),'html.parser')
-    for row in soup.find_all("script"):
-        text = BeautifulSoup(row.decode(),'html.parser').get_text()
-        match = re.match(".*var hs_showid = (\d+).*",text)
-        if match: return match.group(1)
+parser.add_option("-p", "--provider", dest="provider", help="Which provider to use [horriblesubs, erai_raws] default is erai_raws", default="erai_raws")
 
-def episodes(anime):
-    episodehash = {
-            "batch": [],
-            "nobatch": []
-    }
-    i = 0
-    response = requests.post("https://horriblesubs.info/api.php?method=getshows&type=batch&showid="+anime)
-    while True:
-        if response.content.decode() == "DONE":break
-        soup = BeautifulSoup(response.content.decode(),'html.parser')
-        for div in soup.find_all("div",class_="rls-info-container"):
-            episode = re.sub("^0*","",div.get("id"))
-            if episode == "": continue
-            if i == 0 and not re.match("^\d+-\d+$", episode): continue
-            elif i > 0 and not re.match("^\d+$", episode): continue
+(options, args) = parser.parse_args()
 
-            subhash = {
-                "id": episode,
-                "quality": {}
-            }
-
-            for link in div.find_all("div", class_="rls-link"):
-                if link.find("a",{"title":"Magnet Link"}):
-                    subhash["quality"][re.sub("\d+-|p","",link.get("id"))] = link.find("a",{"title":"Magnet Link"}).get("href")
-            if i == 0:
-                episodehash["batch"].append(subhash)
-            else:
-                episodehash["nobatch"].append(subhash)
-        response = requests.post("https://horriblesubs.info/api.php?method=getshows&type=show&showid="+anime+"&nextid="+str(i))
-        i += 1
-
-    episodehash["batch"] = [k for k in sorted(episodehash["batch"], key=lambda i:i["id"])]
-    episodehash["nobatch"] = [k for k in sorted(episodehash["nobatch"], key=lambda i:int(i["id"]))]
-
-    print("Available episodes: ")
-    print ("="*40)
-    for array in ("batch", "nobatch"):
-        for episode in episodehash[array]:
-            print(episode["id"] + ": " + ", ". join(map(lambda x: str(x+"p"), episode["quality"].keys())) )
-    print ("="*40)
-
-    return episodehash
-
-def episodeparser(episodelist):
-    array = episodelist.split(",")
-
-    if array[0] == "":
-        return episodehash["nobatch"]
-
-    episodes = []
-
-    for row in array:
-        (x,y) = (False, False)
-        if re.match("^\d*-\d*$",row):
-            batcharray = filter_from_array(row, episodehash["batch"])
-            if len(batcharray) > 0:
-                episodes.extend(batcharray)
-                continue
-            (x,y) = row.split("-")
-            if not x:x = episodehash["nobatch"][0]["id"]
-            if not y:y = episodehash["nobatch"][-1]["id"]
-        else:x = y = row
-
-        if int(x) > int(y) or len(filter_from_array(x, episodehash["nobatch"])) == 0 or len(filter_from_array(y, episodehash["nobatch"])) == 0:sys.exit("Invalid episode range or episode doesn't exist: "+row)
-        for i in range(int(x),int(y)+1):
-            nobatcharray = filter_from_array(str(i), episodehash["nobatch"])
-            if len(nobatcharray) > 0:
-                episodes.extend(nobatcharray)
-    return episodes
-
-def filter_from_array(text, array):
-    return [k for k in array if k["id"] == text]
-
-def qualityparser(episodes,quality):
-    if quality != "":quality = quality.replace("p","")
-    qualities = []
-    for episode in episodes:
-        if len(episode["quality"].keys()) == 0:
-            pass
-        elif quality == "":
-            subhash = {}
-            subhash["id"] = episode["id"]
-            subhash["quality"] = list(episode["quality"].keys())[-1]
-            subhash["link"] = episode["quality"][subhash["quality"]]
-            qualities.append(subhash)
-        elif quality in episode["quality"]:
-            subhash = {
-                "id": episode["id"],
-                "quality": quality,
-                "link": episode["quality"][quality]
-            }
-            qualities.append(subhash)
-        else:pass
-    return qualities
-
-def download(confirm,quality):
-    pass
-    if confirm.lower() != "yes":return
-    array = ["deluge-console","add"]
-    for episode in quality:
-        array.append(episode["link"])
-    subprocess.run(array)
-
-search(' '.join(sys.argv[1:]))
-episodehash = episodes(id(input("Which anime do you want to download?[1] ") or 1))
-episodelist = input("Which episodes do you want?(comma separated list)\nx-y: all episodes betweeen and including x to y\nx-: all episodes after and including x\n-y: all episodes until including y\n[All except batches]: ")
-episodes = episodeparser(episodelist)
-
-print ("="*40)
-quality = input("Which quality do you want?[Best possible]: ")
-print("Matches:")
-quality = qualityparser(episodes,quality)
-print ("="*40)
-for episode in quality:
-    print (episode["id"]+": "+episode["quality"]+"p")
-print ("="*40)
-
-confirm = input("Do you want to download these files?(yes/no)[yes]: ") or "yes"
-
-move = subprocess.check_output(["deluge-console","config","move_completed"]).strip().decode().split(": ")[1].lower()
-move_complete = input("Do you want to move completed?(yes/no)[no]: ") or "no"
-if move == "true" and move_complete.lower() == "no":subprocess.run(["deluge-console","config","-s","move_completed","false"],stdout=subprocess.DEVNULL)
-elif move == "false" and move_complete.lower() == "yes":subprocess.run(["deluge-console","config","-s","move_completed","true"],stdout=subprocess.DEVNULL)
-
-download(confirm,quality)
-subprocess.run(["deluge-console","config","-s","move_completed",move],stdout=subprocess.DEVNULL)
+try:
+    anime_downloader = AD(options.provider, ' '.join(args))
+    anime_downloader.run()
+except ValueError as error:
+    print(error)
+    sys.exit("Aborting script!")
 
 sys.exit("DONE!")
