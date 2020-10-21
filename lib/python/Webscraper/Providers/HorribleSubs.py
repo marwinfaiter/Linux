@@ -2,25 +2,26 @@ import requests
 from bs4 import BeautifulSoup
 import sys
 import os
-from Webscraper.Anime_downloader import Anime_downloader
 
-class HorribleSubs(Anime_downloader):
-    def __init__(self, provider, anime):
-        Anime_downloader.__init__(self, provider, anime)
-
-    def search_for_anime(self):
+class HorribleSubs:
+    def search_for_anime(self, anime):
+        found_animes = []
         response = requests.post("https://horriblesubs.info/shows/")
         soup = BeautifulSoup(response.content.decode(),'html.parser')
         for row in soup.find_all("div", class_="ind-show"):
             link = BeautifulSoup(row.decode(),'html.parser').find("a")
             if re.match(".*"+self.anime+".*",link["title"], re.I):
-                self.found_animes.append("title": link["title"], "href": link["href"])
-        return True
+                found_animes.append("title": link["title"], "href": link["href"])
+        return found_animes
 
     def get_episodes(self):
         if not self._get_anime_id(): return
         i = 0
-        response = requests.post("https://horriblesubs.info/api.php?method=getshows&type=batch&showid="+self.id)
+        available_episodes = {
+            "Batch": [],
+            "Episodes": []
+        }
+        response = requests.post("https://horriblesubs.info/api.php?method=getshows&type=batch&showid="+self.anime_id)
         while True:
             if response.content.decode() == "DONE":break
             soup = BeautifulSoup(response.content.decode(),'html.parser')
@@ -39,14 +40,15 @@ class HorribleSubs(Anime_downloader):
                     if link.find("a",{"title":"Magnet Link"}):
                         subhash["quality"][re.sub("\d+-|p","",link.get("id"))] = link.find("a",{"title":"Magnet Link"}).get("href")
                 if i == 0:
-                    self.available_episodes["Batch"].append(subhash)
+                    available_episodes["Batch"].append(subhash)
                 else:
-                    self.available_episodes["Episodes"].append(subhash)
-            response = requests.post("https://horriblesubs.info/api.php?method=getshows&type=show&showid="+self.id+"&nextid="+str(i))
+                    available_episodes["Episodes"].append(subhash)
+            response = requests.post("https://horriblesubs.info/api.php?method=getshows&type=show&showid="+self.anime_id+"&nextid="+str(i))
             i += 1
 
-        for array in self.available_episodes:
-            self.available_episodes[array] = sorted(self.available_episodes[array], key=lambda i: i["number"])
+        for array in available_episodes:
+            available_episodes[array] = sorted(available_episodes[array], key=lambda i: int(i["number"]))
+        return available_episodes
 
     def _get_anime_id(self):
         anime = input("Which anime do you want to download?[1] ") or 1
@@ -55,5 +57,5 @@ class HorribleSubs(Anime_downloader):
         for row in soup.find_all("script"):
             text = BeautifulSoup(row.decode(),'html.parser').get_text()
             match = re.match(".*var hs_showid = (\d+).*",text)
-            if match: self.id = match.group(1)
+            if match: self.anime_id = match.group(1)
         return True

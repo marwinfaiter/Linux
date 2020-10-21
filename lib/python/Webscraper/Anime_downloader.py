@@ -20,48 +20,42 @@ class Anime_downloader:
             raise ValueError("The specified provider \"%s\" does not exit" % provider)
 
         self.anime = anime
-        self.anime_url = ""
         self.provider = provider
-        self.found_animes = []
-        self.available_episodes = {
-            "Batch": [],
-            "Episodes": []
-        }
         self.chosen_episodes = []
         self.chosen_qualites_from_episodes = []
 
     def run(self):
-        self.handler = getattr(importlib.import_module(self.providers[self.provider.lower()]["libpath"]), self.providers[self.provider.lower()]["class"])(self.provider, self.anime)
+        self.handler = getattr(importlib.import_module(self.providers[self.provider.lower()]["libpath"]), self.providers[self.provider.lower()]["class"])()
         if not hasattr(self, "handler"):
             raise ValueError("Couldn't create handler for %s" % self.provider)
 
-        if not self.handler.search_for_anime(): return
-        if not len(self.handler.found_animes):
+        self.found_animes = self.handler.search_for_anime(self.anime)
+        if not len(self.found_animes):
             print("Found no animes!")
             return True
 
-        if not self.handler.print_available_animes(): return
-        if not self.handler.get_anime_url(): return
+        if not self.print_available_animes(): return
+        if not self.get_anime_url(): return
 
-        if not self.handler.get_episodes(): return
-        if not len(self.handler.available_episodes["Batch"]) and not len(self.handler.available_episodes["Episodes"]):
+        self.available_episodes = self.handler.get_episodes(self.anime_url)
+        if not len(self.available_episodes["Batch"]) and not len(self.available_episodes["Episodes"]):
             print("Found no Episodes!")
             return True
-        if not self.handler.print_available_episodes(): return
+        if not self.print_available_episodes(): return
 
-        if not self.handler.filter_to_chosen_episodes(): return
-        if not len(self.handler.chosen_episodes):
+        if not self.filter_to_chosen_episodes(): return
+        if not len(self.chosen_episodes):
             print("Found no Episodes matching your input!")
             return True
-        if not self.handler.print_chosen_episodes(): return
+        if not self.print_chosen_episodes(): return
 
-        if not self.handler.filter_to_chosen_quality(): return
-        if not len(self.handler.chosen_qualites_from_episodes):
+        if not self.filter_to_chosen_quality(): return
+        if not len(self.chosen_qualites_from_episodes):
             print("Found no Episodes matching your input!")
             return True
-        if not self.handler.print_chosen_quality(): return
+        if not self.print_chosen_quality(): return
 
-        if not self.handler.send_to_deluge(): return
+        if not self.send_to_deluge(): return
         return True
 
     def filter_from_array(self, text, array):
