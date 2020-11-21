@@ -1,20 +1,15 @@
 import importlib
 import subprocess
-import json
 import sys
 import re
+from Webscraper.Providers.HorribleSubs import HorribleSubs
+from Webscraper.Providers.Erai_raws import Erai_raws
 
 class Anime_downloader:
     def __init__(self, provider, anime):
         self.providers = {
-            "horriblesubs": {
-                "libpath": "Webscraper.Providers.HorribleSubs",
-                "class": "HorribleSubs"
-            },
-            "erai_raws": {
-                "libpath": "Webscraper.Providers.Erai_raws",
-                "class": "Erai_raws"
-            }
+            "horriblesubs": HorribleSubs,
+            "erai_raws": Erai_raws
         }
         if not provider.lower() in self.providers:
             raise ValueError("The specified provider \"%s\" does not exit" % provider)
@@ -23,12 +18,11 @@ class Anime_downloader:
         self.provider = provider
         self.chosen_episodes = []
         self.chosen_qualites_from_episodes = []
-
-    def run(self):
-        self.handler = getattr(importlib.import_module(self.providers[self.provider.lower()]["libpath"]), self.providers[self.provider.lower()]["class"])()
+        self.handler = self.providers[provider.lower()]()
         if not hasattr(self, "handler"):
             raise ValueError("Couldn't create handler for %s" % self.provider)
 
+    def run(self):
         self.found_animes = self.handler.search_for_anime(self.anime)
         if not len(self.found_animes):
             print("Found no animes!")
@@ -156,8 +150,8 @@ class Anime_downloader:
         move = subprocess.check_output(["deluge-console","config","move_completed"]).strip().decode().split(": ")[1].lower()
         move_complete = input("Do you want to move completed?(yes/no)[no]: ") or "no"
 
-        if move == "true" and move_complete.lower() == "no":subprocess.run(["deluge-console","config","-s","move_completed","false"],stdout=subprocess.DEVNULL)
-        elif move == "false" and move_complete.lower() == "yes":subprocess.run(["deluge-console","config","-s","move_completed","true"],stdout=subprocess.DEVNULL)
+        if move_complete.lower() == "no":subprocess.run(["deluge-console","config","-s","move_completed","false"],stdout=subprocess.DEVNULL)
+        elif move_complete.lower() == "yes":subprocess.run(["deluge-console","config","-s","move_completed","true"],stdout=subprocess.DEVNULL)
 
         array = ["deluge-console","add"]
         for episode in self.chosen_qualites_from_episodes:

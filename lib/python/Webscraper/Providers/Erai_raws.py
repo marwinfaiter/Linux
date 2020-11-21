@@ -1,13 +1,14 @@
 import requests
 from bs4 import BeautifulSoup
 import sys
-import os
 import re
+import cloudscraper
 
 class Erai_raws:
     def search_for_anime(self, anime):
         found_animes = []
-        response = requests.post("https://erai-raws.info/anime-list/")
+        scraper = cloudscraper.create_scraper()
+        response = scraper.get("https://erai-raws.info/anime-list/")
         soup = BeautifulSoup(response.content.decode(),'html.parser')
         for row in soup.find_all("div", class_="ind-show"):
             link = BeautifulSoup(row.decode(),'html.parser').find("a")
@@ -18,28 +19,27 @@ class Erai_raws:
     def get_episodes(self, anime_url):
         urls = {
             "Batch": {
-                "url": 'https://erai-raws.info/wp-admin/admin-ajax.php',
+                "url": 'https://www.erai-raws.info/wp-admin/admin-ajax.php',
                 "data": {
                     "action": "load_more_3",
                     "query": '{"anime-list":"'+anime_url+'","order":"ASC","nopaging":true}'
                 }
             },
             "Episodes": {
-                "url": 'https://erai-raws.info/wp-admin/admin-ajax.php',
+                "url": 'https://www.erai-raws.info/wp-admin/admin-ajax.php',
                 "data": {
                     "action": "load_more_0",
                     "query": '{"anime-list":"'+anime_url+'","order":"ASC","nopaging":true}',
                 }
             }
         }
-
         available_episodes = {
             "Batch": [],
             "Episodes": []
         }
-
+        scraper = cloudscraper.create_scraper()
         for url in urls:
-            response = requests.post(urls[url]["url"], data = urls[url]["data"])
+            response = scraper.post(urls[url]["url"], data = urls[url]["data"])
             soup = BeautifulSoup(response.content.decode(),'html.parser')
             for article in soup.find_all("article"):
                 episode_div = article.find("div")

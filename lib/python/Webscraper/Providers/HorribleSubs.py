@@ -2,16 +2,18 @@ import requests
 from bs4 import BeautifulSoup
 import sys
 import os
+import cloudscraper
 
 class HorribleSubs:
     def search_for_anime(self, anime):
         found_animes = []
-        response = requests.post("https://horriblesubs.info/shows/")
+        scraper = cloudscraper.create_scraper()
+        response = scraper.get("https://horriblesubs.info/shows/")
         soup = BeautifulSoup(response.content.decode(),'html.parser')
         for row in soup.find_all("div", class_="ind-show"):
             link = BeautifulSoup(row.decode(),'html.parser').find("a")
             if re.match(".*"+self.anime+".*",link["title"], re.I):
-                found_animes.append("title": link["title"], "href": link["href"])
+                found_animes.append({"title": link["title"], "href": link["href"]})
         return found_animes
 
     def get_episodes(self):
