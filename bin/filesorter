@@ -213,17 +213,8 @@ sub filter {
                         elsif ($param eq "Resolution" && $regex =~ /^(\d+)p?$/) {
                             $_->{$param} == $1;
                         }
-                        elsif ($regex =~ /^<=(\d+)p?$/) {
-                            $_->{$param} <= $1;
-                        }
-                        elsif ($regex =~ /^<(\d+)p?/) {
-                            $_->{$param} < $1;
-                        }
-                        elsif ($regex =~ /^>=(\d+)p?$/) {
-                            $_->{$param} >= $1;
-                        }
-                        elsif ($regex =~ /^>(\d+)p?$/) {
-                            $_->{$param} > $1;
+                        elsif ($regex =~ /^([<=>]+)(\d+)p?$/) {
+                            eval "$_->{$param} $1 $2";
                         }
                         else {
                             $_->{$param} =~ /$regex/i;
@@ -262,11 +253,11 @@ sub build_renamehash {
     foreach my $n (0..$#LIST) {
         my $file = $LIST[$n];
 
-        get_source($file);
-        get_filetype($file);
-        get_story($file);
-        get_quality($file);
-        get_date($file);
+        next unless get_source($file);
+        next unless get_filetype($file);
+        next unless get_story($file);
+        next unless get_quality($file);
+        next unless get_date($file);
 
         printf("%-25s => %d/%d (%.2f%%)\r", (caller(0))[3], $n+1, scalar @LIST, ($n+1)*100/scalar @LIST);
     }
@@ -306,6 +297,8 @@ sub get_source {
         }
     }
     $file->{newfile} =~ s/\[[^\[\]]+\]//ig;
+
+    return 1;
 }
 
 sub get_story {
@@ -314,13 +307,18 @@ sub get_story {
 
     push @{$file->{story}}, $file->{newfile} =~ /\{([^{}]+)\}/g;
     $file->{newfile} =~ s/\{([^{}]+)\}//g;
+
+    return 1;
 }
 
 sub get_quality {
     my $file = shift;
     logger("Parsing/Extracting quality");
 
-    next unless $file->{filetype};
+    if (!$file->{filetype}) {
+        ($file->{filetype}) = $file->{filepath} =~ /\.(\w+)$/;
+        return unless $file->{filetype};
+    }
 
     if (!$file->{duplicate} && !$options{forcemediainfo} && $file->{newfile} =~ /(\W|^)(\d{3,4})p(\W|$)/i) {
         $file->{Resolution} = $2;
@@ -337,6 +335,8 @@ sub get_quality {
     if (!$file->{duplicate}) {
         $file->{newfile} =~ s/(\W|^)(\d{3,4})p(\W|$)/$1$3/gi;
     }
+
+    return 1;
 }
 
 sub get_date {
@@ -354,6 +354,8 @@ sub get_date {
         $file->{date} = "$year $month $day";
         $file->{newfile} =~ s/(^|\W)((?:\d{4}|\d{2})\D\d{2}\D\d{2})($|\W)/$1$3/g;
     }
+
+    return 1;
 }
 
 sub custom_data {
@@ -386,6 +388,8 @@ sub custom_data {
         @{$file->{$attribute}} = unique(@{$file->{$attribute}});
         s/^\s+|\s+$//g for @{$file->{$attribute}};
     }
+
+    return 1;
 }
 
 sub build_newfile {
@@ -409,6 +413,8 @@ sub build_newfile {
     push @filename, $file->{date} // ();
     push @filename, $file->{Resolution}? $file->{Resolution}."p" : ();
     $file->{newfile} = sprintf("%s.%s", join(" ", @filename), $file->{filetype} // "");
+
+    return 1;
 }
 
 sub build_movepath {
@@ -421,6 +427,8 @@ sub build_movepath {
     push @movepath, ("#Actors",join(" & ", sort @{$file->{actor}})) if scalar @{$file->{actor}};
     push @movepath, @{$file->{story}};
     $file->{dir} = join("/",@movepath);
+
+    return 1;
 }
 
 sub move_clean {
@@ -456,7 +464,8 @@ sub move_clean {
                 newfile   => $file->{newfile},
             };
             $file->{duplicate} = 1;
-            get_quality($_) for ($oldfile,$file);
+            next unless get_quality($oldfile);
+            next unless get_quality($file);
             push @{$file->{error}}, sprintf("Duplicate: %s", $options{overwrite}?"New will overwrite existing":$options{removeduplicate}?"Will delete new":"No active solution");
             foreach ("Resolution","Bitrate","Duration") {
                 push @{$file->{error}}, sprintf("%-10s(existing/new): %s/%s",$_,$oldfile->{$_} // "",$file->{$_} // "");
@@ -482,6 +491,8 @@ sub move_clean {
     }
     $options{commit} and -e "$_" and system sprintf("find \"%s\" -empty -delete", $_) for @ARGV;
     print $options{commit}? colored("Moved files and cleaned old folders\n","green"):colored("No changes made               \n","yellow");
+
+    return 1;
 }
 
 sub unique {
