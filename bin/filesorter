@@ -178,6 +178,12 @@ sub find_files {
                 newfile  => $newfile,
                 orgfile  => $orgfile,
             };
+            my @left_parenths = $file->{newfile} =~ /(\(|\{|\[)/g;
+            my @right_parenths = $file->{newfile} =~ /(\)|\}|\])/g;
+            if (@left_parenths != @right_parenths) {
+                push @{$file->{error}}, "Uneven number of parethesis, brackets, or curly brackets";
+                next;
+            }
         }
         push @LIST, @filepaths;
     }
@@ -231,14 +237,18 @@ sub get_actors {
     my @LIST = @_;
 
     foreach my $file (@LIST) {
-        $renamedata{actors}{$_} = 1 for (grep { scalar (split(" ",$_)) > 1 } $file->{newfile} =~ /\(([^()]+)\)/g);
+        my @actors = $file->{newfile} =~ /\(([^()]+)\)/g;
+        $renamedata{actors}{$_} = 1 for grep { scalar (split(" ",$_)) > 1 } @actors;
+        push @{$file->{actor}}, @actors;
+        $file->{newfile} =~ s/(\W|^)$_(\W|$)/$1$2/ig for @actors;;
     }
 
     foreach my $n (0..$#LIST) {
         my $file = $LIST[$n];
-        foreach my $actor ( (grep { $file->{newfile} =~ /\W$_\W/i } keys %{$renamedata{actors}}, $file->{newfile} =~ /\(([^()]+)\)/g) ) {
-            push @{$file->{actor}}, $actor;
-            $file->{newfile} =~ s/(\W)$actor(\W)/$1$2/ig;
+        foreach my $actor (keys %{$renamedata{actors}}, @{$file->{actor}} ) {
+            next unless $file->{newfile} =~ /(\W|^)$actor(\W|$)/i;
+            push @{$file->{actor}}, $actor unless grep { $_ eq $actor } @{$file->{actor}};
+            $file->{newfile} =~ s/(\W|^)$actor(\W|$)/$1$2/ig;
         }
         $file->{newfile} =~ s/\(|\)//g;
         printf("%-25s => %d/%d (%.2f%%)\r", (caller(0))[3], $n+1, scalar @LIST, ($n+1)*100/scalar @LIST);
