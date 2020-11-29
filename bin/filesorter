@@ -167,6 +167,7 @@ sub find_files {
         foreach my $file (@filepaths) {
             my @filesplit = split("/",$file);
             my $newfile = my $orgfile = pop @filesplit;
+            $newfile =~ s/´|`|’/'/g;
             $newfile =~ s/-|_|,|!|\?|\.(?!\w+$)/ /g if $options{cleantitle};
             $newfile =~ s/([\w']+)/\u\L$1/g;
             $newfile =~ s/\s+/ /g;
@@ -278,8 +279,7 @@ sub get_filetype {
     logger("Parsing filetype");
     my $file = shift;
 
-    $file->{newfile} =~ s/(\.\w+$)/\L$1/g;
-    if (($file->{filetype}) = $file->{newfile} =~ /\.(\w+)$/) {
+    if (($file->{filetype}) = (lc $file->{newfile}) =~ /\.(\w+)$/) {
         $file->{newfile} =~ s/\.\w+$//;
     }
     else {
