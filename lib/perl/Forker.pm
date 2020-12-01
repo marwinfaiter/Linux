@@ -135,7 +135,7 @@ sub _print_fork {
 sub _print {
     my ($self, $kid) = @_;
 
-    return if (ref $kid->{output} eq "GLOB");
+    return if (ref $kid->{output}) ne "GLOB";
 
     my $output = $kid->{output};
     $kid->{output} =  join("", <$output>);
