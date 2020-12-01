@@ -10,6 +10,7 @@ import sys
 import subprocess
 import signal
 from optparse import OptionParser
+import threading
 
 def signal_handler(sig, frame):
     print('\nAborting script!')
@@ -51,12 +52,13 @@ def get_media_url(url):
 def download_media(searchdict):
     for url in searchdict:
         if re.search("\.m3u8", url):
-            searchdict[url]["dir"] = searchdict[url]["dir"] or options.dir or ".",
-            searchdict[url]["filename"] = searchdict[url]["filename"] or input("Save file(" + url + "): "),
+            searchdict[url]["dir"] = searchdict[url]["dir"] or options.dir or "."
+            searchdict[url]["filename"] = searchdict[url]["filename"] or input("Save file(" + url + "): ")
+            searchdict[url]["filepath"] = searchdict[url]["dir"][0] + "/" + searchdict[url]["filename"][0]
+            searchdict[url]["url"] = url
+            thread = myThread(searchdict[url])
+            thread.start()
 
-            filepath = searchdict[url]["dir"][0] + "/" + searchdict[url]["filename"][0]
-            subprocess.run(["ffmpeg","-i",url,"-c","copy",filepath],stdout=subprocess.DEVNULL)
-            print("Download Complete: %s" % (filepath))
         else:
             for media in searchdict[url]:
                 r = requests.get(media, headers={'referer': url, "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 Safari/537.36"})
@@ -67,6 +69,14 @@ def download_media(searchdict):
                 open(filepath,"wb").write(r.content)
                 print("Download Complete(%s/%s): %s" % (searchdict[url].index(media)+1,len(searchdict[url]),filepath))
 
+class myThread (threading.Thread):
+   def __init__(self, url):
+      threading.Thread.__init__(self)
+      self.url = url
+
+   def run(self):
+        subprocess.run(["ffmpeg","-i",self.url["url"],"-c","copy",self.url["filepath"]], stdout=subprocess.DEVNULL)
+        print("Download Complete: %s" % (self.url["filepath"]))
 
 usage = "Usage: %prog [options] args"
 parser = OptionParser(usage)
