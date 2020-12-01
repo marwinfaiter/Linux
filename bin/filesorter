@@ -29,6 +29,7 @@ Getopt::Long::GetOptions(
     "forcemediainfo"  => \$options{forcemediainfo},
     "noprompt"        => \$options{noprompt},
     "cleantitle"      => \$options{cleantitle},
+    "onlyrename"      => \$options{onlyrename},
     "debug"           => \$options{debug},
 
     "overwrite"       => \$options{overwrite},
@@ -175,7 +176,7 @@ sub find_files {
             $file = {
                 filepath => $file,
                 inpath   => $arg,
-                dir      => $options{dir} // $arg,
+                dir      => $options{onlyrename}? $arg : $options{dir} || $arg,
                 newfile  => $newfile,
                 orgfile  => $orgfile,
             };
@@ -430,6 +431,8 @@ sub build_newfile {
 sub build_movepath {
     logger("Building new movepath");
     my $file = shift;
+
+    return 1 if $options{onlyrename};
 
     my @movepath;
     push @movepath, $file->{dir};
