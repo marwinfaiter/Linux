@@ -461,9 +461,20 @@ sub move_clean {
         next if $file->{filepath} eq $dir."/".$file->{newfile};
         if ($options{keepboth}) {
             $file->{duplicate} = 1;
-            build_newfile($file) until ! -f $dir."/".$file->{newfile};
+            build_newfile($file) until ! -f $dir."/".$file->{newfile} && (grep {$file->{newfile} eq $_->{newfile} && $file->{dir} eq $_->{dir}} @LIST) == 1;
         }
-        if (($options{overwrite} && $options{commit}) || ! -f $dir."/".$file->{newfile}) {
+
+        my @duplicates = grep {$file->{newfile} eq $_->{newfile} && $file->{dir} eq $_->{dir}} @LIST;
+        if (@duplicates > 1) {
+            push @{$file->{error}}, "These files will have the same filepath after move";
+            push @{$file->{error}}, "Use --keepboth to add an incrementing number at the end";
+            foreach my $duplicate (@duplicates) {
+                push @{$file->{error}}, $duplicate->{filepath};
+            }
+            next;
+        }
+
+        if (($options{overwrite} && $options{commit}) || (! -f $dir."/".$file->{newfile})) {
             if ($options{commit}) {
                 system "mkdir -p -m 700 \"$dir\"" if ! -e $dir;
                 if (grep {$file->{filepath} =~ /\.$_$/i} @{$options{convert}}) {
