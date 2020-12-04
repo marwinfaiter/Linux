@@ -30,6 +30,7 @@ Getopt::Long::GetOptions(
     "noprompt"        => \$options{noprompt},
     "cleantitle"      => \$options{cleantitle},
     "onlyrename"      => \$options{onlyrename},
+    "convert=s"       => \@{$options{convert}},
     "debug"           => \$options{debug},
 
     "overwrite"       => \$options{overwrite},
@@ -169,7 +170,7 @@ sub find_files {
             my @filesplit = split("/",$file);
             my $newfile = my $orgfile = pop @filesplit;
             $newfile =~ s/´|`|’/'/g;
-            $newfile =~ s/-|_|,|!|\?|\.(?!\w+$)/ /g if $options{cleantitle};
+            $newfile =~ s/[^\{\(\[\]\)\}\.\w'@&](?!\w+$)/ /g if $options{cleantitle};
             $newfile =~ s/([\w']+)/\u\L$1/g;
             $newfile =~ s/\s+/ /g;
             $newfile =~ s/^\s+|\s+$//g;
@@ -274,6 +275,8 @@ sub build_renamehash {
         printf("%-25s => %d/%d (%.2f%%)\r", (caller(0))[3], $n+1, scalar @LIST, ($n+1)*100/scalar @LIST);
     }
     print "\n";
+
+    return 1;
 }
 
 sub get_filetype {
@@ -286,6 +289,8 @@ sub get_filetype {
     else {
         push @{$file->{error}}, "Filetype: No filetype found";
     }
+
+    return 1;
 }
 
 sub get_source {
@@ -423,7 +428,10 @@ sub build_newfile {
     }
     push @filename, $file->{date} // ();
     push @filename, $file->{Resolution}? $file->{Resolution}."p" : ();
-    $file->{newfile} = sprintf("%s.%s", join(" ", @filename), $file->{filetype} // "");
+
+    my $filetype = (grep {lc $_ eq $file->{filetype}} @{$options{convert}})? "mp4" : $file->{filetype} // "";
+
+    $file->{newfile} = sprintf("%s.%s", join(" ", @filename), $filetype);
 
     return 1;
 }
@@ -458,8 +466,13 @@ sub move_clean {
         if (($options{overwrite} && $options{commit}) || ! -f $dir."/".$file->{newfile}) {
             if ($options{commit}) {
                 system "mkdir -p -m 700 \"$dir\"" if ! -e $dir;
-                system sprintf("chmod 600 \"%s\"", $file->{filepath});
-                system sprintf("mv \"%s\" \"%s\"", $file->{filepath}, $dir."/".$file->{newfile});
+                if (grep {$file->{filepath} =~ /\.$_$/i} @{$options{convert}}) {
+                    system(sprintf('ffmpeg -i "%s" -c:v libx264 -c:a aac "%s"', $file->{filepath}, $dir."/".$file->{newfile}))
+                }
+                else {
+                    system sprintf("chmod 600 \"%s\"", $file->{filepath});
+                    system sprintf("mv \"%s\" \"%s\"", $file->{filepath}, $dir."/".$file->{newfile});
+                }
             }
             printf("Input:  \"%s\"\n", $file->{filepath});
             printf("Output: \"%s\"\n\n", $dir."/".$file->{newfile});
