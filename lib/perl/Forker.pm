@@ -6,23 +6,36 @@ use namespace::autoclean;
 use Data::Dumper;
 use Storable ();
 use File::Spec;
+use POSIX ":sys_wait_h";
 
 has 'kids'        => ( is => 'rw', isa => 'ArrayRef', default => sub {[]} );
 has 'threads'     => ( is => 'rw', isa => 'Int' );
-has 'file_handle' => ( is => 'rw' );
-has 'wait_print'   => ( is => 'rw', isa => 'Bool', default => 0 );
-has 'no_print'   => ( is => 'rw', isa => 'Bool', default => 0 );
+has 'file_handle' => ( is => 'rw', isa => 'FileHandle' );
+has 'wait_print'  => ( is => 'rw', isa => 'Bool' );
+has 'no_print'    => ( is => 'rw', isa => 'Bool' );
 has 'parent_pid'  => ( is => 'rw', isa => 'Int', default => sub {$$});
 
-$SIG{CHLD} = 'IGNORE';
+=head2 add_fork
+
+    Adds a fork
+
+    If we're going over the allowed limit for the number of threads
+    we will sleep until the thread can be added.
+
+    Then attempts to print any finished threads but in order.
+
+    Then we add the fork.
+
+    If a subroutine is given as the $code parameter
+    we will execute it and then exit the child
+
+=cut
 
 sub add_fork {
     my ($self, $fork_id, $code, @args) = @_;
 
-    if ( $self->threads ) {
-        while ( $self->running >= $self->threads ) {
-            select undef, undef, undef, 0.5;
-        }
+    if ( $self->threads && $self->running >= $self->threads) {
+        waitpid -1, 0;
     }
 
     $self->_print_fork();
@@ -49,6 +62,14 @@ sub add_fork {
     }
 }
 
+=head2 exit_child
+
+    Exits the child and stores the return data
+    Input: Object (ArrayRef, HashRef, StringRef, String)
+    returns: Will exit the child here with a normal exit
+
+=cut
+
 sub exit_child {
     my ($self, $return_data) = @_;
 
@@ -57,6 +78,14 @@ sub exit_child {
     exit;
 }
 
+=head2 finish
+
+    Waits for all children to finish and returns arrayref with the child data
+    Input:
+    Returns ArrayRef
+
+=cut
+
 sub finish {
     my $self = shift;
 
@@ -64,8 +93,6 @@ sub finish {
         waitpid $kid->{pid}, 0;
 
         $self->_print($kid);
-
-        delete $kid->{printed};
     }
 
     if (scalar @{$self->kids} == 1) {
@@ -76,14 +103,24 @@ sub finish {
     }
 }
 
+=head2 running
+
+    Checks number of running children
+    Input:
+    Returns: wantarray
+
+=cut
+
 sub running {
     my $self = shift;
 
-    my @running = grep { kill(0, $_->{pid}) } @{$self->kids};
+    my @running = grep { waitpid($_->{pid}, WNOHANG) == 0 } @{$self->kids};
 
     return wantarray ? @running : scalar @running;
 }
 
+# Store returned data returned from child.
+# Will later be picked up by $self->_retrieve
 sub _store {
     my ($self, $return_data) = @_;
 
@@ -98,8 +135,11 @@ sub _store {
     }
 }
 
+# Retrieve data returned from the child
 sub _retrieve {
     my ($self, $kid) = @_;
+
+    return unless $kid;
 
     my $retrieved = undef;
 
@@ -120,18 +160,20 @@ sub _retrieve {
     return $retrieved;
 }
 
+# Checks if any children have finished and sends them to $self->_print
 sub _print_fork {
     my $self = shift;
 
     return if $self->wait_print;
 
     foreach my $kid (@{$self->kids}) {
-        last if kill(0, $kid->{pid});
+        last if waitpid($kid->{pid}, WNOHANG) == 0;
 
         $self->_print($kid);
     }
 }
 
+# Actually prints the output GLOB and retrievs returned data from child.
 sub _print {
     my ($self, $kid) = @_;
 
@@ -140,8 +182,7 @@ sub _print {
     my $output = $kid->{output};
     $kid->{output} =  join("", <$output>);
 
-    my $return_data = $self->_retrieve($kid->{pid});
-    $kid->{data} = $return_data;
+    $kid->{data} = $self->_retrieve($kid->{pid});
 
     if (!$self->no_print) {
         print { $self->file_handle || *STDOUT } $kid->{output};
@@ -149,5 +190,11 @@ sub _print {
 }
 
 __PACKAGE__->meta->make_immutable;
+
+=head1 AUTHOR
+
+    Marwinfaiter
+
+=cut
 
 1;
