@@ -10,14 +10,14 @@ use Data::Dumper;
 use Term::ANSIColor;
 use Log::Log4perl ':easy';
 
-has ['filepath', 'dir']                                                                      => ( is => 'rw', isa => 'Str', required => 1 );
-has ['inpath', 'orgfile', 'newfile', 'title', 'date', 'bitrate', 'duration', 'filetype']     => ( is => 'rw', isa => 'Str' );
-has ['actor', 'source', 'story', 'errors', 'convert']                                        => ( is => 'rw', isa => 'ArrayRef', default => sub {[]} );
-has 'mediainfo'                                                                              => ( is => 'rw', isa => 'Mediainfo', default => sub {Mediainfo->new(filename => shift->filepath)}, lazy => 1 );
-has 'resolution'                                                                             => ( is => 'rw', isa => 'Int' );
-has ['duplicate', 'commit', 'list', 'dump', 'delete', 'onlyrename', 'overwrite', 'keepboth', 'forcemediainfo'] => ( is => 'rw', isa => 'Bool' );
-has ['filter', 'custom_data']                                                                => ( is => 'rw', isa => 'HashRef' );
-has 'logger'                                                                                 => ( is => 'rw', isa => 'Log::Log4perl::Logger', default => sub {Log::Log4perl->easy_init($INFO); get_logger()} );
+has ['filepath', 'dir']                                                                                                   => ( is => 'rw', isa => 'Str', required => 1 );
+has ['inpath', 'orgfile', 'newfile', 'title', 'date', 'bitrate', 'duration', 'filetype']                                  => ( is => 'rw', isa => 'Str' );
+has ['actor', 'source', 'story', 'errors']                                                                                => ( is => 'rw', isa => 'ArrayRef', default => sub {[]} );
+has 'mediainfo'                                                                                                           => ( is => 'rw', isa => 'Mediainfo', default => sub {Mediainfo->new(filename => shift->filepath)}, lazy => 1 );
+has 'resolution'                                                                                                          => ( is => 'rw', isa => 'Int' );
+has ['duplicate', 'commit', 'list', 'dump', 'delete', 'onlyrename', 'overwrite', 'keepboth', 'forcemediainfo', 'convert'] => ( is => 'rw', isa => 'Bool' );
+has ['filter', 'custom_data']                                                                                             => ( is => 'rw', isa => 'HashRef' );
+has 'logger'                                                                                                              => ( is => 'rw', isa => 'Log::Log4perl::Logger', default => sub {Log::Log4perl->easy_init($INFO); get_logger()} );
 
 sub run {
     my ($self, %args) = @_;
@@ -27,7 +27,6 @@ sub run {
     return unless $self->get_story;
     return unless $self->get_quality;
     return unless $self->get_date;
-
     return 2 if !$self->check_filter;
 
     return unless $self->set_custom_data;
@@ -96,6 +95,8 @@ sub get_filetype {
         push @{$self->errors}, "Filetype: No filetype found";
         return;
     }
+
+    $self->filetype("mp4") if $self->convert;
 
     return 1;
 }
@@ -218,9 +219,7 @@ sub build_newfile {
     push @filename, $self->date if $self->date;
     push @filename, $self->resolution? $self->resolution."p" : ();
 
-    my $selftype = (grep {lc $_ eq $self->filetype} @{$self->convert})? "mp4" : $self->filetype // "";
-
-    $self->newfile(sprintf("%s.%s", join(" ", @filename), $selftype));
+    $self->newfile(sprintf("%s.%s", join(" ", @filename), $self->filetype // ""));
 
     return 1;
 }
@@ -240,56 +239,80 @@ sub build_movepath {
     return 1;
 }
 
+sub build_newpath {
+    my $self = shift;
+
+    return join("/", $self->dir, $self->newfile);
+}
+
 sub move_clean {
     my $self = shift;
 
     if (! scalar @{$self->errors}) {
-        my $dir = $self->dir;
-        return 1 if $self->filepath eq $dir."/".$self->newfile;
+        return 1 if $self->filepath eq $self->build_newpath;
+
         if ($self->keepboth) {
             $self->duplicate = 1;
-            build_newfile($self) until ! -f $dir."/".$self->newfile;
+            $self->build_newfile until ! -f $self->build_newpath;
         }
 
-        if (($self->overwrite && $self->commit) || (! -f $dir."/".$self->newfile)) {
+        my $input_output = {
+            input => {
+                path => $self->filepath,
+                color => 'default',
+            },
+            output => {
+                path => $self->build_newpath,
+                color => 'default',
+            },
+        };
+
+        if (! -f $self->build_newpath || $self->overwrite) {
             if ($self->commit) {
-                system "mkdir -p -m 700 \"$dir\"" if ! -e $dir;
-                if (grep {$self->filepath =~ /\.$_$/i} @{$self->convert}) {
-                    system(sprintf('ffmpeg -i "%s" -c:v libx264 -c:a aac "%s"', $self->filepath, $dir."/".$self->newfile))
+                system(sprintf('mkdir -p -m 700 "%s"', $self->dir)) if ! -e $self->dir;
+                if ($self->convert) {
+                    system(sprintf('ffmpeg -i "%s" -c:v libx264 -c:a copy "%s"', $self->filepath, $self->build_newpath));
                 }
                 else {
                     system sprintf("chmod 600 \"%s\"", $self->filepath);
-                    system sprintf("mv \"%s\" \"%s\"", $self->filepath, $dir."/".$self->newfile);
+                    system sprintf("mv \"%s\" \"%s\"", $self->filepath, $self->build_newpath);
                 }
             }
-            printf("Input:  \"%s\"\n", $self->filepath);
-            printf("Output: \"%s\"\n\n", $dir."/".$self->newfile);
+
+            $input_output->{input}->{color} = "red";
+            $input_output->{output}->{color} = "green";
+        }
+        elsif ($self->removeduplicate) {
+            if ($self->commit) {
+                print "Removing input file\n";
+                unlink $self->filepath;
+            }
+            $input_output->{input}->{color} = "red";
+            $input_output->{output}->{color} = "green";
         }
         else {
-            if ($self->removeduplicate && $self->commit) {
-                system sprintf "rm \"%s\"\n", $self->filepath;
-                printf("Existing:\"%s\"\n", colored($dir."/".$self->newfile,"green"));
-                printf("New:     \"%s\"\n\n", colored($self->filepath, "red"));
-                next;
-            }
-            my $oldfile = {
-                filepath  => $dir."/".$self->newfile,
+            my $oldfile = $self->new(
+                filepath  => $self->build_newpath,
+                dir       => $self->dir,
                 duplicate => 1,
                 newfile   => $self->newfile,
-            };
+            );
             $self->duplicate = 1;
-            next unless get_quality($oldfile);
-            next unless get_quality($self);
-            push @{$self->error}, sprintf("Duplicate: %s", $self->overwrite?"New will overwrite existing":$self->removeduplicate?"Will delete new":"No active solution");
-            foreach ("Resolution","Bitrate","Duration") {
-                push @{$self->error}, sprintf("%-10s(existing/new): %s/%s",$_,$oldfile->$_ // "",$self->$_ // "");
+            return unless get_quality($oldfile);
+            return unless get_quality($self);
+
+            push @{$self->error}, sprintf("Duplicate: %s", "No active solution");
+            foreach my $attribute ("resolution","bitrate","duration") {
+                push @{$self->error}, sprintf("%-10s(existing/new): %s/%s",ucfirst $attribute,$oldfile->$attribute // "",$self->$attribute // "");
             }
             push @{$self->error}, "--overwrite        Move new and overwrite existing";
             push @{$self->error}, "--removeduplicate  Delete new";
-            push @{$self->error}, "--keepboth         Add X to end of newfile";
+            push @{$self->error}, "--keepboth         Add an incrementing number to the end of output file";
         }
+        printf("%-6s: \"%s\"\n",ucfirst $_, colored($input_output->{$_}->{path}, $input_output->{$_}->{color})) for sort keys %$input_output;
+        print "\n";
+        system sprintf("find \"%s\" -empty -delete", $self->inpath) if $self->commit;
     }
-    system sprintf("find \"%s\" -empty -delete", $self->inpath) if $self->commit;
 
     return 1;
 }
@@ -365,6 +388,7 @@ get_actors(@LIST);
 
 while (my ($index, $file) = each @LIST) {
     #printf("%-25s => %d/%d (%.2f%%)\n", $file->orgfile, $index+1, scalar @LIST, ($index+1)*100/scalar @LIST);
+    next if scalar @{$file->errors};
     my $status = $file->run;
     if ($status && $status == 2) {
         undef $LIST[$index];
@@ -404,21 +428,23 @@ sub find_files {
             $newfile =~ s/([\w']+)/\u\L$1/g;
             $newfile =~ s/\s+/ /g;
             $newfile =~ s/^\s+|\s+$//g;
+            my $convert = grep {$newfile =~ /\.$_/i} @{$options{convert}};
             $file = filesorter::handler->new(
-                filepath       => $file,
-                inpath         => join("/", @filesplit),
+                convert        => $convert,
+                custom_data    => $options{custom},
+                delete         => $options{delete},
                 dir            => $options{onlyrename}? join("/", @filesplit) : $options{dir} || $arg,
+                dump           => $options{dump},
+                filepath       => $file,
+                filter         => $options{filter},
+                forcemediainfo => $options{forcemediainfo},
+                inpath         => join("/", @filesplit),
+                keepboth       => $options{keepboth},
+                list           => $options{list},
                 newfile        => $newfile,
+                onlyrename     => $options{onlyrename},
                 orgfile        => $orgfile,
                 overwrite      => $options{overwrite},
-                keepboth       => $options{keepboth},
-                onlyrename     => $options{onlyrename},
-                forcemediainfo => $options{forcemediainfo},
-                dump           => $options{dump},
-                list           => $options{list},
-                delete         => $options{delete},
-                filter         => $options{filter},
-                custom_data    => $options{custom},
             );
             my @left_parenths = $file->newfile =~ /(\(|\{|\[)/g;
             my @right_parenths = $file->newfile =~ /(\)|\}|\])/g;
