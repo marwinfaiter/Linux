@@ -1,17 +1,312 @@
 #!/usr/bin/perl -w
 
+package filesorter::handler;
+
+use Moose;
+use namespace::autoclean;
+use Mediainfo;
+use Image::Info qw(image_info dim);
+use Data::Dumper;
+use Term::ANSIColor;
+use Log::Log4perl ':easy';
+
+has ['filepath', 'dir']                                                                      => ( is => 'rw', isa => 'Str', required => 1 );
+has ['inpath', 'orgfile', 'newfile', 'title', 'date', 'bitrate', 'duration', 'filetype']     => ( is => 'rw', isa => 'Str' );
+has ['actor', 'source', 'story', 'errors', 'convert']                                        => ( is => 'rw', isa => 'ArrayRef', default => sub {[]} );
+has 'mediainfo'                                                                              => ( is => 'rw', isa => 'Mediainfo', default => sub {Mediainfo->new(filename => shift->filepath)}, lazy => 1 );
+has 'resolution'                                                                             => ( is => 'rw', isa => 'Int' );
+has ['duplicate', 'commit', 'list', 'dump', 'delete', 'onlyrename', 'overwrite', 'keepboth', 'forcemediainfo'] => ( is => 'rw', isa => 'Bool' );
+has ['filter', 'custom_data']                                                                => ( is => 'rw', isa => 'HashRef' );
+has 'logger'                                                                                 => ( is => 'rw', isa => 'Log::Log4perl::Logger', default => sub {Log::Log4perl->easy_init($INFO); get_logger()} );
+
+sub run {
+    my ($self, %args) = @_;
+
+    return unless $self->get_source;
+    return unless $self->get_filetype;
+    return unless $self->get_story;
+    return unless $self->get_quality;
+    return unless $self->get_date;
+
+    return 2 if !$self->check_filter;
+
+    return unless $self->set_custom_data;
+    return unless $self->build_newfile;
+    return unless $self->build_movepath;
+    if ($self->list) {
+        print $self->filepath . "\n";
+        return 1;
+    }
+    elsif ($self->dump) {
+        print Dumper $self;
+        return 1;
+    }
+    elsif ($self->delete) {
+        if ($self->commit) {
+            print colored("Deleting " . $self->filepath . "\n", "red");
+            unlink $self->filepath;
+            system sprintf("find $self->inpath -empty -delete");
+        }
+        else {
+            print colored("Would delete " . $self->filepath . "\n", "yellow");
+        }
+        return 1;
+    }
+
+    return unless $self->move_clean;
+
+    return 1;
+}
+
+sub check_filter {
+    my $self = shift;
+
+    foreach my $param (keys %{$self->filter}) {
+        if (scalar @{$self->filter->{$param}} > 0) {
+            if ($self->$param) {
+                @{$self->filter->{$param}} = split(",",join(",",@{$self->filter->{$param}}));
+                my $regex = join("|",@{$self->filter->{$param}});
+                if (ref $self->$param eq "ARRAY") {
+                    return unless grep { /$regex/i } @{$self->$param};
+                }
+                elsif ($param eq "Resolution" && $regex =~ /^(\d+)p?$/) {
+                    return unless $self->$param == $1;
+                }
+                elsif ($regex =~ /^([<=>]+)(\d+)p?$/) {
+                    return unless eval "$self->$param $1 $2";
+                }
+                else {
+                    return unless $self->$param =~ /$regex/i;
+                }
+            }
+        }
+    }
+
+    return 1;
+}
+
+sub get_filetype {
+    my $self = shift;
+
+    if ((lc $self->newfile) =~ /\.(\w+)$/) {
+        $self->filetype((lc $self->newfile) =~ /\.(\w+)$/);
+        $self->newfile($self->newfile =~ s/\.\w+$//r);
+    }
+    else {
+        push @{$self->errors}, "Filetype: No filetype found";
+        return;
+    }
+
+    return 1;
+}
+
+sub get_source {
+    my $self = shift;
+
+    push @{$self->source}, $self->orgfile =~ /\[([^\[\]]+)\]/g;
+    $self->newfile($self->newfile =~ s/\[[^\[\]]+\]//igr);
+
+    return 1;
+}
+
+sub get_story {
+    my $self = shift;
+
+    push @{$self->story}, $self->newfile =~ /\{([^{}]+)\}/g;
+    $self->newfile($self->newfile =~ s/\{([^{}]+)\}//gr);
+
+    return 1;
+}
+
+sub get_quality {
+    my ($self, %args) = @_;
+
+    if (!$self->duplicate && !$args{forcemediainfo} && $self->newfile =~ /(\W|^)(\d{3,4})p(\W|$)/i) {
+        $self->resolution($2);
+    }
+    elsif (!$self->duration || !$self->resolution || !$self->bitrate) {
+        my $mf = eval {local *STDERR; open(STDERR, '>', 'NUL'); image_info($self->filepath)};
+        if ($mf && !$mf->{error} && $mf->{file_media_type} =~ /image/) {
+            $self->resolution($mf->{height});
+        }
+        elsif ($self->mediainfo->{have_video}) {
+            $self->resolution($self->mediainfo->{height});
+            if ($self->mediainfo->{video_length} && $self->mediainfo->{video_bitrate}) {
+                $self->bitrate(sprintf("%.2f Mbit/s", $self->mediainfo->{video_bitrate} / 1000000));
+                $self->duration(sprintf("%dm %ds", $self->mediainfo->{video_length} / 60000, $self->mediainfo->{video_length} / 1000 % 60));
+            }
+        }
+        else {
+            push @{$self->errors}, "Failed to get mediainfo";
+            return;
+        }
+    }
+    if (!$self->duplicate) {
+        $self->newfile($self->newfile =~ s/(\W|^)(\d{3,4})p(\W|$)/$1$3/gir);
+    }
+
+    return 1;
+}
+
+sub get_date {
+    my $self = shift;
+
+    if ($self->newfile =~ /(^|\W)(\d{4}|\d{2})\D(\d{2})\D(\d{2})($|\W)/) {
+        my ($year, $month, $day) = ($2,$3,$4);
+        if (length $year == 2) {
+            $year = "20".$year;
+        }
+        if (($year > `date +%Y` ) || ($month < 01 || $month > 12) || ($day < 01 || $day > 31)) {
+            return 1;
+        }
+        $self->date("$year $month $day");
+        $self->newfile($self->newfile =~ s/(^|\W)((?:\d{4}|\d{2})\D\d{2}\D\d{2})($|\W)/$1$3/gr);
+    }
+
+    return 1;
+}
+
+sub set_custom_data {
+    my $self = shift;
+
+    foreach my $attribute (("actor","source","story")) {
+        s/^\s+|\s+$//g for @{$self->$attribute};
+        foreach my $delete (@{$self->custom_data->{delete}->{$attribute}}) {
+            /^$delete$/i and undef $_ for @{$self->$attribute};
+        }
+        @{$self->$attribute} = grep {defined $_} @{$self->$attribute};
+
+        foreach my $replacement (keys %{$self->custom_data->{replace}->{$attribute}}) {
+            s/^$replacement$/$self->custom_data->{replace}->{$attribute}->{$replacement}/ie for @{$self->$attribute};
+        }
+
+        @{$self->custom_data->{add}->{$attribute}} = split(",",join(",",@{$self->custom_data->{add}->{$attribute}}));
+
+        if ($self->custom_data->{add}->{"static".$attribute}) {
+            @{$self->$attribute} = @{$self->custom_data->{add}{$attribute}};
+        }
+        elsif ($self->custom_data->{add}->{"last".$attribute}) {
+            push @{$self->$attribute}, @{$self->custom_data->{add}->{$attribute}};
+        }
+        else {
+            unshift @{$self->$attribute}, @{$self->custom_data->{add}->{$attribute}};
+        }
+
+        @{$self->$attribute} = keys %{{map {$_ => 1} @{$self->$attribute}}};
+        s/^\s+|\s+$//g for @{$self->$attribute};
+    }
+
+    return 1;
+}
+
+sub build_newfile {
+    my $self = shift;
+
+    $self->newfile($self->newfile =~ s/^\s+|\s+$//gr);
+    $self->newfile($self->newfile =~ s/\s{2,}/ /gr);
+    $self->title($self->newfile) if !$self->duplicate;
+
+    my @filename;
+    push @filename, join("",map { "[$_]" } @{$self->source}) if scalar @{$self->source};
+    push @filename, join(" ",map { "($_)" } sort @{$self->actor}) if scalar @{$self->actor};
+    push @filename, join(" ",map { "{$_}" } @{$self->story}) if scalar @{$self->story};
+    push @filename, $self->title if $self->title;
+    if ($self->duplicate) {
+        push @filename, $self->duplicate;
+        $self->duplicate++;
+    }
+    push @filename, $self->date if $self->date;
+    push @filename, $self->resolution? $self->resolution."p" : ();
+
+    my $selftype = (grep {lc $_ eq $self->filetype} @{$self->convert})? "mp4" : $self->filetype // "";
+
+    $self->newfile(sprintf("%s.%s", join(" ", @filename), $selftype));
+
+    return 1;
+}
+
+sub build_movepath {
+    my $self = shift;
+
+    return 1 if $self->onlyrename;
+
+    my @movepath;
+    push @movepath, $self->dir;
+    push @movepath, scalar @{$self->source}? @{$self->source} : "Other";
+    push @movepath, ("#Actors",join(" & ", sort @{$self->actor})) if scalar @{$self->actor};
+    push @movepath, @{$self->story};
+    $self->dir(join("/",@movepath));
+
+    return 1;
+}
+
+sub move_clean {
+    my $self = shift;
+
+    if (! scalar @{$self->errors}) {
+        my $dir = $self->dir;
+        return 1 if $self->filepath eq $dir."/".$self->newfile;
+        if ($self->keepboth) {
+            $self->duplicate = 1;
+            build_newfile($self) until ! -f $dir."/".$self->newfile;
+        }
+
+        if (($self->overwrite && $self->commit) || (! -f $dir."/".$self->newfile)) {
+            if ($self->commit) {
+                system "mkdir -p -m 700 \"$dir\"" if ! -e $dir;
+                if (grep {$self->filepath =~ /\.$_$/i} @{$self->convert}) {
+                    system(sprintf('ffmpeg -i "%s" -c:v libx264 -c:a aac "%s"', $self->filepath, $dir."/".$self->newfile))
+                }
+                else {
+                    system sprintf("chmod 600 \"%s\"", $self->filepath);
+                    system sprintf("mv \"%s\" \"%s\"", $self->filepath, $dir."/".$self->newfile);
+                }
+            }
+            printf("Input:  \"%s\"\n", $self->filepath);
+            printf("Output: \"%s\"\n\n", $dir."/".$self->newfile);
+        }
+        else {
+            if ($self->removeduplicate && $self->commit) {
+                system sprintf "rm \"%s\"\n", $self->filepath;
+                printf("Existing:\"%s\"\n", colored($dir."/".$self->newfile,"green"));
+                printf("New:     \"%s\"\n\n", colored($self->filepath, "red"));
+                next;
+            }
+            my $oldfile = {
+                filepath  => $dir."/".$self->newfile,
+                duplicate => 1,
+                newfile   => $self->newfile,
+            };
+            $self->duplicate = 1;
+            next unless get_quality($oldfile);
+            next unless get_quality($self);
+            push @{$self->error}, sprintf("Duplicate: %s", $self->overwrite?"New will overwrite existing":$self->removeduplicate?"Will delete new":"No active solution");
+            foreach ("Resolution","Bitrate","Duration") {
+                push @{$self->error}, sprintf("%-10s(existing/new): %s/%s",$_,$oldfile->$_ // "",$self->$_ // "");
+            }
+            push @{$self->error}, "--overwrite        Move new and overwrite existing";
+            push @{$self->error}, "--removeduplicate  Delete new";
+            push @{$self->error}, "--keepboth         Add X to end of newfile";
+        }
+    }
+    system sprintf("find \"%s\" -empty -delete", $self->inpath) if $self->commit;
+
+    return 1;
+}
+
+__PACKAGE__->meta->make_immutable;
+
+1;
+
+package main;
+
 use strict;
 use Data::Dumper;
 use Getopt::Long;
 use Term::ANSIColor;
-use Mediainfo;
 
 my %options;
-my %filetree;
-my $currentyear = `date "+%Y"`;
-my @LIST;
 my %renamedata;
-my $count = 1;
 $|++;
 $Data::Dumper::Indent = 1;
 $Data::Dumper::Sortkeys = 1;
@@ -27,7 +322,6 @@ Getopt::Long::GetOptions(
 
     "dir=s"           => \$options{dir},
     "forcemediainfo"  => \$options{forcemediainfo},
-    "noprompt"        => \$options{noprompt},
     "cleantitle"      => \$options{cleantitle},
     "onlyrename"      => \$options{onlyrename},
     "convert=s"       => \@{$options{convert}},
@@ -66,8 +360,105 @@ Getopt::Long::GetOptions(
     "date=s"          => \@{$options{filter}{date}},
 ) or help();
 
+my @LIST = find_files(@ARGV);
+get_actors(@LIST);
+
+while (my ($index, $file) = each @LIST) {
+    #printf("%-25s => %d/%d (%.2f%%)\n", $file->orgfile, $index+1, scalar @LIST, ($index+1)*100/scalar @LIST);
+    my $status = $file->run;
+    if ($status && $status == 2) {
+        undef $LIST[$index];
+    }
+}
+
+@LIST = grep { defined } @LIST;
+
+foreach my $file (grep {scalar @{$_->errors} && $_->duplicate} @LIST) {
+        printf("Existing: \"%s\"\n",colored($file->dir."/".$file->newfile, ($file->overwrite?"red":$file->removeduplicate?"green":"reset")));
+        printf("New:      \"%s\"\n",colored($file->filepath, ($file->overwrite?"green":$file->removeduplicate?"red":"reset")));
+        printf("%s\n", colored("Errors:", "magenta"));
+        print join("\n",@{$file->errors})."\n\n";
+}
+
+foreach my $file (grep {scalar @{$_->errors} && !$_->duplicate} @LIST) {
+    printf("Input:  \"%s\"\n%s\n%s\n\n",
+        $file->filepath,
+        colored("Errors:", "magenta"),
+        join("\n",@{$file->errors})
+    );
+}
+
+print $options{commit}? colored("Moved files and cleaned old folders\n","green"):colored("No changes made               \n","yellow");
+
+sub find_files {
+    my @args = @_ or help();
+    my @LIST;
+
+    foreach my $arg (@args) {
+        chomp(my @filepaths = `find "$arg" -type f`);
+        foreach my $file (@filepaths) {
+            my @filesplit = split("/",$file);
+            my $newfile = my $orgfile = pop @filesplit;
+            $newfile =~ s/´|`|’/'/g;
+            $newfile =~ s/([^\{\(\[\]\)\}\w'@&]|_)(?!\w+$)/ /g if $options{cleantitle};
+            $newfile =~ s/([\w']+)/\u\L$1/g;
+            $newfile =~ s/\s+/ /g;
+            $newfile =~ s/^\s+|\s+$//g;
+            $file = filesorter::handler->new(
+                filepath       => $file,
+                inpath         => join("/", @filesplit),
+                dir            => $options{onlyrename}? join("/", @filesplit) : $options{dir} || $arg,
+                newfile        => $newfile,
+                orgfile        => $orgfile,
+                overwrite      => $options{overwrite},
+                keepboth       => $options{keepboth},
+                onlyrename     => $options{onlyrename},
+                forcemediainfo => $options{forcemediainfo},
+                dump           => $options{dump},
+                list           => $options{list},
+                delete         => $options{delete},
+                filter         => $options{filter},
+                custom_data    => $options{custom},
+            );
+            my @left_parenths = $file->newfile =~ /(\(|\{|\[)/g;
+            my @right_parenths = $file->newfile =~ /(\)|\}|\])/g;
+            if (@left_parenths != @right_parenths) {
+                push @{$file->errors}, "Uneven number of parethesis, brackets, or curly brackets";
+            }
+        }
+        push @LIST, @filepaths;
+    }
+
+    @LIST = sort { $a->orgfile cmp $b->orgfile } @LIST;
+
+    return @LIST;
+}
+
+sub get_actors {
+    my @LIST = @_;
+
+    foreach my $file (@LIST) {
+        my @actors = $file->newfile =~ /\(([^()]+)\)/g;
+        $renamedata{actors}{$_} = 1 for grep { scalar (split(" ",$_)) > 1 } @actors;
+        push @{$file->actor}, @actors;
+        $file->newfile($file->newfile =~ s/(\W|^)$_(\W|$)/$1$2/igr) for @actors;
+    }
+
+    foreach my $n (0..$#LIST) {
+        my $file = $LIST[$n];
+        foreach my $actor (keys %{$renamedata{actors}}, @{$file->actor} ) {
+            next unless $file->newfile =~ /(\W|^)$actor(\W|$)/i;
+            push @{$file->actor}, $actor unless grep { $_ eq $actor } @{$file->actor};
+            $file->newfile($file->newfile =~ s/(\W|^)$actor(\W|$)/$1$2/igr);
+        }
+        $file->newfile($file->newfile =~ s/\(|\)//gr);
+        printf("%-25s => %d/%d (%.2f%%)\r", (caller(0))[3], $n+1, scalar @LIST, ($n+1)*100/scalar @LIST);
+    }
+    print "\n";
+}
+
 sub help {
-print "Usage: $0 <input folder 1> <input folder 2> <...> <options>
+exit print "Usage: $0 <input folder 1> <input folder 2> <...> <options>
     --help              Print this helptext
 
     --commit            Move files and clean input directories
@@ -78,7 +469,7 @@ print "Usage: $0 <input folder 1> <input folder 2> <...> <options>
 
     --dir               Set a custom output directory(default is same as input)
     --forcemediainfo    Force extraction of mediainfo even if resolution exists in filename
-    --noprompt          Dont prompt for source names
+    --onlyrename        Don't move files, just rename them
     --cleantitle        Removes -|_|,|.|! from file title
     --debug             Enable debugging
 
@@ -107,432 +498,4 @@ Filters:
     --filetype          \@Filter by filetype
     --date              \@Filter by date
 ";
-exit;
-}
-
-@LIST = find_files(@ARGV);
-
-build_renamehash(@LIST);
-get_actors(@LIST);
-
-@LIST = filter(@LIST);
-
-do { custom_data($_); build_newfile($_); build_movepath($_) } for @LIST;
-
-if ($options{list} || $options{dump} || $options{delete}) {
-    foreach my $file (@LIST) {
-        if ($options{list}) {
-            my $temptree = \%filetree;
-            my @movepath = split("/",$file->{filepath});
-            pop @movepath;
-            while (my $folder = shift @movepath) {
-                if (scalar @movepath == 0) {
-                    $temptree->{$folder}{$file->{orgfile}} = 1;
-                }
-                else {
-                    $temptree->{$folder} ||= {};
-                    $temptree = $temptree->{$folder}
-                }
-            }
-        }
-        elsif ($options{delete}) {
-            if (!$options{commit}) {
-                print colored("Would delete " . $file->{filepath} . "\n", "yellow");
-                next;
-            }
-            print colored("Deleting " . $file->{filepath} . "\n", "red");
-            unlink $file->{filepath};
-        }
-    }
-    if ($options{list}) {
-        print Dumper \%filetree;
-    }
-    elsif ($options{dump}) {
-        print Dumper \@LIST;
-    }
-    elsif($options{delete} && $options{commit}) {
-        system sprintf("find $_ -empty -delete") for @ARGV;
-    }
-    exit;
-}
-
-move_clean(@LIST);
-
-sub find_files {
-    logger("Finding files in input paths");
-
-    my @args = @_ or help();
-    my @LIST;
-
-    foreach my $arg (@args) {
-        chomp(my @filepaths = `find "$arg" -type f`);
-        foreach my $file (@filepaths) {
-            my @filesplit = split("/",$file);
-            my $newfile = my $orgfile = pop @filesplit;
-            $newfile =~ s/´|`|’/'/g;
-            $newfile =~ s/[^\{\(\[\]\)\}\.\w'@&](?!\w+$)/ /g if $options{cleantitle};
-            $newfile =~ s/([\w']+)/\u\L$1/g;
-            $newfile =~ s/\s+/ /g;
-            $newfile =~ s/^\s+|\s+$//g;
-            $file = {
-                filepath => $file,
-                inpath   => $arg,
-                dir      => $options{onlyrename}? $arg : $options{dir} || $arg,
-                newfile  => $newfile,
-                orgfile  => $orgfile,
-            };
-            my @left_parenths = $file->{newfile} =~ /(\(|\{|\[)/g;
-            my @right_parenths = $file->{newfile} =~ /(\)|\}|\])/g;
-            if (@left_parenths != @right_parenths) {
-                push @{$file->{error}}, "Uneven number of parethesis, brackets, or curly brackets";
-                next;
-            }
-        }
-        push @LIST, @filepaths;
-    }
-
-    @LIST = sort { $a->{orgfile} cmp $b->{orgfile} } @LIST;
-
-    return @LIST;
-}
-
-sub logger {
-    my ($message,$color) = @_;
-    return if !$options{debug};
-    print
-        colored("DEBUG => ".((caller(1))[3] // (caller(0))[3]).($message?" => ":""),"magenta"),
-        colored($message // "", $color // "white"),
-        "\n";
-}
-
-sub filter {
-    logger("Filtering list");
-
-    my @LIST = @_;
-    foreach my $param (keys %{$options{filter}}) {
-        if (scalar @{$options{filter}{$param}} > 0) {
-            @LIST =
-                grep {
-                    if ($_->{$param}) {
-                        @{$options{filter}{$param}} = split(",",join(",",@{$options{filter}{$param}}));
-                        my $regex = join("|",@{$options{filter}{$param}});
-                        if (ref $_->{$param} eq "ARRAY") {
-                            grep { /$regex/i } @{$_->{$param}};
-                        }
-                        elsif ($param eq "Resolution" && $regex =~ /^(\d+)p?$/) {
-                            $_->{$param} == $1;
-                        }
-                        elsif ($regex =~ /^([<=>]+)(\d+)p?$/) {
-                            eval "$_->{$param} $1 $2";
-                        }
-                        else {
-                            $_->{$param} =~ /$regex/i;
-                        }
-                    }
-                } @LIST;
-        }
-    }
-    return @LIST;
-}
-
-sub get_actors {
-    logger("Collecting actors");
-    my @LIST = @_;
-
-    foreach my $file (@LIST) {
-        my @actors = $file->{newfile} =~ /\(([^()]+)\)/g;
-        $renamedata{actors}{$_} = 1 for grep { scalar (split(" ",$_)) > 1 } @actors;
-        push @{$file->{actor}}, @actors;
-        $file->{newfile} =~ s/(\W|^)$_(\W|$)/$1$2/ig for @actors;;
-    }
-
-    foreach my $n (0..$#LIST) {
-        my $file = $LIST[$n];
-        foreach my $actor (keys %{$renamedata{actors}}, @{$file->{actor}} ) {
-            next unless $file->{newfile} =~ /(\W|^)$actor(\W|$)/i;
-            push @{$file->{actor}}, $actor unless grep { $_ eq $actor } @{$file->{actor}};
-            $file->{newfile} =~ s/(\W|^)$actor(\W|$)/$1$2/ig;
-        }
-        $file->{newfile} =~ s/\(|\)//g;
-        printf("%-25s => %d/%d (%.2f%%)\r", (caller(0))[3], $n+1, scalar @LIST, ($n+1)*100/scalar @LIST);
-    }
-    print "\n";
-}
-
-sub build_renamehash {
-    logger("Building filehash");
-    my @LIST = @_;
-
-    foreach my $n (0..$#LIST) {
-        my $file = $LIST[$n];
-
-        next unless get_source($file);
-        next unless get_filetype($file);
-        next unless get_story($file);
-        next unless get_quality($file);
-        next unless get_date($file);
-
-        printf("%-25s => %d/%d (%.2f%%)\r", (caller(0))[3], $n+1, scalar @LIST, ($n+1)*100/scalar @LIST);
-    }
-    print "\n";
-
-    return 1;
-}
-
-sub get_filetype {
-    logger("Parsing filetype");
-    my $file = shift;
-
-    if (($file->{filetype}) = (lc $file->{newfile}) =~ /\.(\w+)$/) {
-        $file->{newfile} =~ s/\.\w+$//;
-    }
-    else {
-        push @{$file->{error}}, "Filetype: No filetype found";
-    }
-
-    return 1;
-}
-
-sub get_source {
-    logger("Parsing source");
-    my $file = shift;
-
-    push @{$file->{source}}, $file->{orgfile} =~ /\[([^\[\]]+)\]/g;
-    foreach my $source (@{$file->{source}}) {
-        my $orgsource = $source;
-        if ($renamedata{sources}{lc $source}) {
-            $source = $renamedata{sources}{lc $source};
-        }
-        else {
-            if (!$options{noprompt}) {
-                print "Enter source [$source]: ";
-                chomp ($source = <STDIN>);
-                $source = $orgsource if $source eq "";
-            }
-            $renamedata{sources}{lc $orgsource} = $source;
-        }
-    }
-    $file->{newfile} =~ s/\[[^\[\]]+\]//ig;
-
-    return 1;
-}
-
-sub get_story {
-    logger("Parsing story");
-    my $file = shift;
-
-    push @{$file->{story}}, $file->{newfile} =~ /\{([^{}]+)\}/g;
-    $file->{newfile} =~ s/\{([^{}]+)\}//g;
-
-    return 1;
-}
-
-sub get_quality {
-    my $file = shift;
-    logger("Parsing/Extracting quality");
-
-    if (!$file->{filetype}) {
-        ($file->{filetype}) = $file->{filepath} =~ /\.(\w+)$/;
-        return unless $file->{filetype};
-    }
-
-    if (!$file->{duplicate} && !$options{forcemediainfo} && $file->{newfile} =~ /(\W|^)(\d{3,4})p(\W|$)/i) {
-        $file->{Resolution} = $2;
-    }
-    elsif (!$file->{Duration} || !$file->{Resolution} || !$file->{Bitrate}) {
-        my $mediainfo;
-        eval { $mediainfo  = Mediainfo->new(filename => $file->{filepath}) };
-        $file->{Resolution} = $mediainfo->{height};
-        if ($mediainfo->{video_length} && $mediainfo->{video_bitrate}) {
-            $file->{Bitrate}    = sprintf("%.2f Mbit/s", $mediainfo->{video_bitrate} / 1000000);
-            $file->{Duration}   = sprintf("%dm %ds", $mediainfo->{video_length} / 60000, $mediainfo->{video_length} / 1000 % 60);
-        }
-    }
-    if (!$file->{duplicate}) {
-        $file->{newfile} =~ s/(\W|^)(\d{3,4})p(\W|$)/$1$3/gi;
-    }
-
-    return 1;
-}
-
-sub get_date {
-    logger("Parsing date");
-    my $file = shift;
-
-    if ($file->{newfile} =~ /(^|\W)(\d{4}|\d{2})\D(\d{2})\D(\d{2})($|\W)/) {
-        my ($year, $month, $day) = ($2,$3,$4);
-        if (length $year == 2) {
-            $year = "20".$year;
-        }
-        if (($year > $currentyear) || ($month < 01 || $month > 12) || ($day < 01 || $day > 31)) {
-            return;
-        }
-        $file->{date} = "$year $month $day";
-        $file->{newfile} =~ s/(^|\W)((?:\d{4}|\d{2})\D\d{2}\D\d{2})($|\W)/$1$3/g;
-    }
-
-    return 1;
-}
-
-sub custom_data {
-    logger("Adding custom Actors, Sources and Stories");
-    my $file = shift;
-
-    foreach my $attribute (("actor","source","story")) {
-        s/^\s+|\s+$//g for @{$file->{$attribute}};
-        foreach my $delete (@{$options{custom}{delete}{$attribute}}) {
-            /^$delete$/i and undef $_ for @{$file->{$attribute}};
-        }
-        @{$file->{$attribute}} = grep {defined $_} @{$file->{$attribute}};
-
-        foreach my $replacement (keys %{$options{custom}{replace}{$attribute}}) {
-            s/^$replacement$/$options{custom}{replace}{$attribute}{$replacement}/i for @{$file->{$attribute}};
-        }
-
-        @{$options{custom}{add}{$attribute}} = split(",",join(",",@{$options{custom}{add}{$attribute}}));
-
-        if ($options{custom}{add}{"static".$attribute}) {
-            @{$file->{$attribute}} = @{$options{custom}{add}{$attribute}};
-        }
-        elsif ($options{custom}{add}{"last".$attribute}) {
-            push @{$file->{$attribute}}, @{$options{custom}{add}{$attribute}};
-        }
-        else {
-            unshift @{$file->{$attribute}}, @{$options{custom}{add}{$attribute}};
-        }
-
-        @{$file->{$attribute}} = unique(@{$file->{$attribute}});
-        s/^\s+|\s+$//g for @{$file->{$attribute}};
-    }
-
-    return 1;
-}
-
-sub build_newfile {
-    logger("Building new filename");
-    my $file = shift;
-
-    $file->{newfile} =~ s/^\s+|\s+$//g;
-    $file->{newfile} =~ s/\s{2,}/ /g;
-    $file->{newfile} = undef if $file->{newfile} eq "";
-    $file->{title} = $file->{newfile} if !$file->{duplicate};
-
-    my @filename;
-    push @filename, join("",map { "[$_]" } @{$file->{source}}) if scalar @{$file->{source}};
-    push @filename, join(" ",map { "($_)" } sort @{$file->{actor}}) if scalar @{$file->{actor}};
-    push @filename, join(" ",map { "{$_}" } @{$file->{story}}) if scalar @{$file->{story}};
-    push @filename, $file->{title} // ();
-    if ($file->{duplicate}) {
-        push @filename, $file->{duplicate};
-        $file->{duplicate}++;
-    }
-    push @filename, $file->{date} // ();
-    push @filename, $file->{Resolution}? $file->{Resolution}."p" : ();
-
-    my $filetype = (grep {lc $_ eq $file->{filetype}} @{$options{convert}})? "mp4" : $file->{filetype} // "";
-
-    $file->{newfile} = sprintf("%s.%s", join(" ", @filename), $filetype);
-
-    return 1;
-}
-
-sub build_movepath {
-    logger("Building new movepath");
-    my $file = shift;
-
-    return 1 if $options{onlyrename};
-
-    my @movepath;
-    push @movepath, $file->{dir};
-    push @movepath, scalar @{$file->{source}}? @{$file->{source}} : "Other";
-    push @movepath, ("#Actors",join(" & ", sort @{$file->{actor}})) if scalar @{$file->{actor}};
-    push @movepath, @{$file->{story}};
-    $file->{dir} = join("/",@movepath);
-
-    return 1;
-}
-
-sub move_clean {
-    logger("Starting file moving and cleanup");
-    my @LIST = @_;
-
-    foreach my $file (grep {!$_->{error}} @LIST) {
-        my $dir = $file->{dir};
-        next if $file->{filepath} eq $dir."/".$file->{newfile};
-        if ($options{keepboth}) {
-            $file->{duplicate} = 1;
-            build_newfile($file) until ! -f $dir."/".$file->{newfile} && (grep {$file->{newfile} eq $_->{newfile} && $file->{dir} eq $_->{dir}} @LIST) == 1;
-        }
-
-        my @duplicates = grep {$file->{newfile} eq $_->{newfile} && $file->{dir} eq $_->{dir}} @LIST;
-        if (@duplicates > 1) {
-            push @{$file->{error}}, "These files will have the same filepath after move";
-            push @{$file->{error}}, "Use --keepboth to add an incrementing number at the end";
-            foreach my $duplicate (@duplicates) {
-                push @{$file->{error}}, $duplicate->{filepath};
-            }
-            next;
-        }
-
-        if (($options{overwrite} && $options{commit}) || (! -f $dir."/".$file->{newfile})) {
-            if ($options{commit}) {
-                system "mkdir -p -m 700 \"$dir\"" if ! -e $dir;
-                if (grep {$file->{filepath} =~ /\.$_$/i} @{$options{convert}}) {
-                    system(sprintf('ffmpeg -i "%s" -c:v libx264 -c:a aac "%s"', $file->{filepath}, $dir."/".$file->{newfile}))
-                }
-                else {
-                    system sprintf("chmod 600 \"%s\"", $file->{filepath});
-                    system sprintf("mv \"%s\" \"%s\"", $file->{filepath}, $dir."/".$file->{newfile});
-                }
-            }
-            printf("Input:  \"%s\"\n", $file->{filepath});
-            printf("Output: \"%s\"\n\n", $dir."/".$file->{newfile});
-        }
-        else {
-            if ($options{removeduplicate} && $options{commit}) {
-                system sprintf "rm \"%s\"\n", $file->{filepath};
-                printf("Existing:\"%s\"\n", colored($dir."/".$file->{newfile},"green"));
-                printf("New:     \"%s\"\n\n", colored($file->{filepath}, "red"));
-                next;
-            }
-            my $oldfile = {
-                filepath  => $dir."/".$file->{newfile},
-                duplicate => 1,
-                newfile   => $file->{newfile},
-            };
-            $file->{duplicate} = 1;
-            next unless get_quality($oldfile);
-            next unless get_quality($file);
-            push @{$file->{error}}, sprintf("Duplicate: %s", $options{overwrite}?"New will overwrite existing":$options{removeduplicate}?"Will delete new":"No active solution");
-            foreach ("Resolution","Bitrate","Duration") {
-                push @{$file->{error}}, sprintf("%-10s(existing/new): %s/%s",$_,$oldfile->{$_} // "",$file->{$_} // "");
-            }
-            push @{$file->{error}}, "--overwrite        Move new and overwrite existing";
-            push @{$file->{error}}, "--removeduplicate  Delete new";
-            push @{$file->{error}}, "--keepboth         Add X to end of newfile";
-        }
-    }
-    foreach my $file (grep {$_->{error} && $_->{duplicate}} @LIST) {
-            printf("Existing: \"%s\"\n",colored($file->{dir}."/".$file->{newfile}, ($options{overwrite}?"red":$options{removeduplicate}?"green":"reset")));
-            printf("New:      \"%s\"\n",colored($file->{filepath}, ($options{overwrite}?"green":$options{removeduplicate}?"red":"reset")));
-            printf("%s\n", colored("Errors:", "magenta"));
-            print join("\n",@{$file->{"error"}})."\n\n";
-    }
-    foreach my $file (grep {$_->{error} && !$_->{duplicate}} @LIST) {
-        printf("Input:  \"%s\"\nOutput: \"%s\"\n%s\n%s\n\n",
-            $file->{filepath},
-            $file->{dir}."/".$file->{newfile},
-            colored("Errors:", "magenta"),
-            join("\n",@{$file->{"error"}})
-        );
-    }
-    $options{commit} and -e "$_" and system sprintf("find \"%s\" -empty -delete", $_) for @ARGV;
-    print $options{commit}? colored("Moved files and cleaned old folders\n","green"):colored("No changes made               \n","yellow");
-
-    return 1;
-}
-
-sub unique {
-    my %seen;
-    return grep !$seen{$_}++, @_;
 }
