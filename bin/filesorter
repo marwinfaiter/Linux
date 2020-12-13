@@ -12,7 +12,7 @@ use Log::Log4perl ':easy';
 
 has ['filepath', 'dir']                                                                                                   => ( is => 'rw', isa => 'Str', required => 1 );
 has ['inpath', 'orgfile', 'newfile', 'title', 'date', 'bitrate', 'duration', 'filetype']                                  => ( is => 'rw', isa => 'Str' );
-has ['actor', 'source', 'story', 'errors']                                                                                => ( is => 'rw', isa => 'ArrayRef', default => sub {[]} );
+has ['actor', 'source', 'story', 'errors', 'available_actors']                                                            => ( is => 'rw', isa => 'ArrayRef', default => sub {[]} );
 has 'mediainfo'                                                                                                           => ( is => 'rw', isa => 'Mediainfo', default => sub {Mediainfo->new(filename => shift->filepath)}, lazy => 1 );
 has 'resolution'                                                                                                          => ( is => 'rw', isa => 'Int' );
 has ['duplicate', 'commit', 'list', 'dump', 'delete', 'onlyrename', 'overwrite', 'keepboth', 'forcemediainfo', 'convert'] => ( is => 'rw', isa => 'Bool' );
@@ -27,6 +27,8 @@ sub run {
     return unless $self->get_story;
     return unless $self->get_quality;
     return unless $self->get_date;
+    return unless $self->get_actors;
+
     return 2 if !$self->check_filter;
 
     return unless $self->set_custom_data;
@@ -167,6 +169,20 @@ sub get_date {
     return 1;
 }
 
+sub get_actors {
+    my $self = shift;
+
+    foreach my $actor (@{$self->available_actors}, $self->newfile =~ /\(([^()]+)\)/g) {
+        next unless $self->newfile =~ /(\W|^)$actor(\W|$)/i;
+        $actor =~ s/([\w']+)/\u\L$1/g unless split(" ", $actor) == 1 && $actor =~ /[A-Z]/;
+        push @{$self->actor}, $actor unless grep { $_ eq $actor } @{$self->actor};
+        $self->newfile($self->newfile =~ s/(\W|^)$actor(\W|$)/$1$2/igr);
+    }
+    $self->newfile($self->newfile =~ s/\(|\)//gr);
+
+    return 1;
+}
+
 sub set_custom_data {
     my $self = shift;
 
@@ -193,7 +209,7 @@ sub set_custom_data {
             unshift @{$self->$attribute}, @{$self->custom_data->{add}->{$attribute}};
         }
 
-        @{$self->$attribute} = keys %{{map {$_ => 1} @{$self->$attribute}}};
+        @{$self->$attribute} = do { my %seen; grep {!$seen{$_}++} @{$self->$attribute}};
         s/^\s+|\s+$//g for @{$self->$attribute};
     }
 
@@ -205,7 +221,7 @@ sub build_newfile {
 
     $self->newfile($self->newfile =~ s/^\s+|\s+$//gr);
     $self->newfile($self->newfile =~ s/\s{2,}/ /gr);
-    $self->title($self->newfile) if !$self->duplicate;
+    $self->title($self->newfile =~ s/([\w']+)/\u\L$1/gr) if !$self->duplicate;
 
     my @filename;
     push @filename, join("",map { "[$_]" } @{$self->source}) if scalar @{$self->source};
@@ -329,7 +345,6 @@ use Getopt::Long;
 use Term::ANSIColor;
 
 my %options;
-my %renamedata;
 $|++;
 $Data::Dumper::Indent = 1;
 $Data::Dumper::Sortkeys = 1;
@@ -384,10 +399,11 @@ Getopt::Long::GetOptions(
 ) or help();
 
 my @LIST = find_files(@ARGV);
-get_actors(@LIST);
+my $available_actors = get_available_actors(@LIST);
 
 while (my ($index, $file) = each @LIST) {
     #printf("%-25s => %d/%d (%.2f%%)\n", $file->orgfile, $index+1, scalar @LIST, ($index+1)*100/scalar @LIST);
+    $file->available_actors($available_actors);
     next if scalar @{$file->errors};
     my $status = $file->run;
     if ($status && $status == 2) {
@@ -412,7 +428,13 @@ foreach my $file (grep {scalar @{$_->errors} && !$_->duplicate} @LIST) {
     );
 }
 
-print $options{commit}? colored("Moved files and cleaned old folders\n","green"):colored("No changes made               \n","yellow");
+if ($options{commit}) {
+    print colored("Moved files and cleaned old folders\n","green");
+    system sprintf("find \"%s\" -empty -delete", $_) for @ARGV;
+}
+else {
+    print colored("No changes made\n","yellow");
+}
 
 sub find_files {
     my @args = @_ or help();
@@ -425,11 +447,11 @@ sub find_files {
             my $newfile = my $orgfile = pop @filesplit;
             $newfile =~ s/´|`|’/'/g;
             $newfile =~ s/([^\{\(\[\]\)\}\w'@&]|_)(?!\w+$)/ /g if $options{cleantitle};
-            $newfile =~ s/([\w']+)/\u\L$1/g;
             $newfile =~ s/\s+/ /g;
             $newfile =~ s/^\s+|\s+$//g;
             my $convert = grep {$newfile =~ /\.$_/i} @{$options{convert}};
             $file = filesorter::handler->new(
+                commit         => $options{commit},
                 convert        => $convert,
                 custom_data    => $options{custom},
                 delete         => $options{delete},
@@ -460,27 +482,19 @@ sub find_files {
     return @LIST;
 }
 
-sub get_actors {
+sub get_available_actors {
     my @LIST = @_;
+    my $actors = [];
 
     foreach my $file (@LIST) {
-        my @actors = $file->newfile =~ /\(([^()]+)\)/g;
-        $renamedata{actors}{$_} = 1 for grep { scalar (split(" ",$_)) > 1 } @actors;
-        push @{$file->actor}, @actors;
-        $file->newfile($file->newfile =~ s/(\W|^)$_(\W|$)/$1$2/igr) for @actors;
+        my @file_actors = $file->newfile =~ /\(([^()]+)\)/g;
+        foreach my $actor (@file_actors) {
+            next unless split(" ", $actor) > 1;
+            push @$actors, $actor if !grep {$_ eq $actor} @$actors
+        }
     }
 
-    foreach my $n (0..$#LIST) {
-        my $file = $LIST[$n];
-        foreach my $actor (keys %{$renamedata{actors}}, @{$file->actor} ) {
-            next unless $file->newfile =~ /(\W|^)$actor(\W|$)/i;
-            push @{$file->actor}, $actor unless grep { $_ eq $actor } @{$file->actor};
-            $file->newfile($file->newfile =~ s/(\W|^)$actor(\W|$)/$1$2/igr);
-        }
-        $file->newfile($file->newfile =~ s/\(|\)//gr);
-        printf("%-25s => %d/%d (%.2f%%)\r", (caller(0))[3], $n+1, scalar @LIST, ($n+1)*100/scalar @LIST);
-    }
-    print "\n";
+    return $actors;
 }
 
 sub help {
