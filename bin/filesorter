@@ -8,16 +8,15 @@ use Mediainfo;
 use Image::Info qw(image_info dim);
 use Data::Dumper;
 use Term::ANSIColor;
-use Log::Log4perl ':easy';
+use Cwd 'abs_path';
 
 has ['filepath', 'dir']                                                                                                   => ( is => 'rw', isa => 'Str', required => 1 );
 has ['inpath', 'orgfile', 'newfile', 'title', 'date', 'bitrate', 'duration', 'filetype']                                  => ( is => 'rw', isa => 'Str' );
 has ['actor', 'source', 'story', 'errors', 'available_actors']                                                            => ( is => 'rw', isa => 'ArrayRef', default => sub {[]} );
 has 'mediainfo'                                                                                                           => ( is => 'rw', isa => 'Mediainfo', default => sub {Mediainfo->new(filename => shift->filepath)}, lazy => 1 );
 has 'resolution'                                                                                                          => ( is => 'rw', isa => 'Int' );
-has ['duplicate', 'commit', 'list', 'dump', 'delete', 'onlyrename', 'overwrite', 'keepboth', 'forcemediainfo', 'convert'] => ( is => 'rw', isa => 'Bool' );
+has ['duplicate', 'commit', 'list', 'dump', 'delete', 'onlyrename', 'overwrite', 'keepboth', 'removeduplicate', 'forcemediainfo', 'convert'] => ( is => 'rw', isa => 'Bool' );
 has ['filter', 'custom_data']                                                                                             => ( is => 'rw', isa => 'HashRef' );
-has 'logger'                                                                                                              => ( is => 'rw', isa => 'Log::Log4perl::Logger', default => sub {Log::Log4perl->easy_init($INFO); get_logger()} );
 
 sub run {
     my ($self, %args) = @_;
@@ -258,77 +257,79 @@ sub build_movepath {
 sub build_newpath {
     my $self = shift;
 
-    return join("/", $self->dir, $self->newfile);
+    my $dir = abs_path($self->dir);
+    $dir = abs_path(".") . "/" . $self->dir unless $dir;
+
+    return join("/", $dir, $self->newfile);
 }
 
 sub move_clean {
     my $self = shift;
 
-    if (! scalar @{$self->errors}) {
-        return 1 if $self->filepath eq $self->build_newpath;
+    return if scalar @{$self->errors};
+    return 1 if $self->filepath eq $self->build_newpath;
 
-        if ($self->keepboth) {
-            $self->duplicate = 1;
-            $self->build_newfile until ! -f $self->build_newpath;
-        }
-
-        my $input_output = {
-            input => {
-                path => $self->filepath,
-                color => 'default',
-            },
-            output => {
-                path => $self->build_newpath,
-                color => 'default',
-            },
-        };
-
-        if (! -f $self->build_newpath || $self->overwrite) {
-            if ($self->commit) {
-                system(sprintf('mkdir -p -m 700 "%s"', $self->dir)) if ! -e $self->dir;
-                if ($self->convert) {
-                    system(sprintf('ffmpeg -i "%s" -c:v libx264 -c:a copy "%s"', $self->filepath, $self->build_newpath));
-                }
-                else {
-                    system sprintf("chmod 600 \"%s\"", $self->filepath);
-                    system sprintf("mv \"%s\" \"%s\"", $self->filepath, $self->build_newpath);
-                }
-            }
-
-            $input_output->{input}->{color} = "red";
-            $input_output->{output}->{color} = "green";
-        }
-        elsif ($self->removeduplicate) {
-            if ($self->commit) {
-                print "Removing input file\n";
-                unlink $self->filepath;
-            }
-            $input_output->{input}->{color} = "red";
-            $input_output->{output}->{color} = "green";
-        }
-        else {
-            my $oldfile = $self->new(
-                filepath  => $self->build_newpath,
-                dir       => $self->dir,
-                duplicate => 1,
-                newfile   => $self->newfile,
-            );
-            $self->duplicate = 1;
-            return unless get_quality($oldfile);
-            return unless get_quality($self);
-
-            push @{$self->error}, sprintf("Duplicate: %s", "No active solution");
-            foreach my $attribute ("resolution","bitrate","duration") {
-                push @{$self->error}, sprintf("%-10s(existing/new): %s/%s",ucfirst $attribute,$oldfile->$attribute // "",$self->$attribute // "");
-            }
-            push @{$self->error}, "--overwrite        Move new and overwrite existing";
-            push @{$self->error}, "--removeduplicate  Delete new";
-            push @{$self->error}, "--keepboth         Add an incrementing number to the end of output file";
-        }
-        printf("%-6s: \"%s\"\n",ucfirst $_, colored($input_output->{$_}->{path}, $input_output->{$_}->{color})) for sort keys %$input_output;
-        print "\n";
-        system sprintf("find \"%s\" -empty -delete", $self->inpath) if $self->commit;
+    if ($self->keepboth) {
+        $self->duplicate = 1;
+        $self->build_newfile until ! -f $self->build_newpath;
     }
+
+    my $input_output = {
+        input => {
+            path => $self->filepath,
+            color => 'reset',
+        },
+        output => {
+            path => $self->build_newpath,
+            color => 'reset',
+        },
+    };
+
+    if (! -f $self->build_newpath || $self->overwrite) {
+        if ($self->commit) {
+            system(sprintf('mkdir -p -m 700 "%s"', $self->dir)) if ! -e $self->dir;
+            if ($self->convert) {
+                system(sprintf('ffmpeg -i "%s" -c:v libx264 -c:a copy "%s"', $self->filepath, $self->build_newpath));
+            }
+            else {
+                system sprintf("chmod 600 \"%s\"", $self->filepath);
+                system sprintf("mv \"%s\" \"%s\"", $self->filepath, $self->build_newpath);
+            }
+        }
+
+        $input_output->{input}->{color} = "red";
+        $input_output->{output}->{color} = "green";
+    }
+    elsif ($self->removeduplicate) {
+        if ($self->commit) {
+            print "Removing input file\n";
+            unlink $self->filepath;
+        }
+        $input_output->{input}->{color} = "red";
+        $input_output->{output}->{color} = "green";
+    }
+    else {
+        my $oldfile = $self->new(
+            filepath  => $self->build_newpath,
+            dir       => $self->dir,
+            duplicate => 1,
+            newfile   => $self->newfile,
+        );
+        $self->duplicate(1);
+        return unless get_quality($oldfile);
+        return unless get_quality($self);
+
+        push @{$self->errors}, sprintf("Duplicate: %s", "No active solution");
+        foreach my $attribute ("resolution","bitrate","duration") {
+            push @{$self->errors}, sprintf("%-10s(existing/new): %s/%s",ucfirst $attribute,$oldfile->$attribute // "",$self->$attribute // "");
+        }
+        push @{$self->errors}, "--overwrite        Move new and overwrite existing";
+        push @{$self->errors}, "--removeduplicate  Delete new";
+        push @{$self->errors}, "--keepboth         Add an incrementing number to the end of output file";
+    }
+    printf("%-6s: \"%s\"\n",ucfirst $_, colored($input_output->{$_}->{path}, $input_output->{$_}->{color})) for sort keys %$input_output;
+    print "\n";
+    system sprintf("find \"%s\" -empty -delete", $self->inpath) if $self->commit;
 
     return 1;
 }
@@ -343,6 +344,7 @@ use strict;
 use Data::Dumper;
 use Getopt::Long;
 use Term::ANSIColor;
+use Cwd 'abs_path';
 
 my %options;
 $|++;
@@ -457,7 +459,7 @@ sub find_files {
                 delete         => $options{delete},
                 dir            => $options{onlyrename}? join("/", @filesplit) : $options{dir} || $arg,
                 dump           => $options{dump},
-                filepath       => $file,
+                filepath       => abs_path($file),
                 filter         => $options{filter},
                 forcemediainfo => $options{forcemediainfo},
                 inpath         => join("/", @filesplit),
