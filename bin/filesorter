@@ -432,7 +432,7 @@ foreach my $file (grep {scalar @{$_->errors} && !$_->duplicate} @LIST) {
 
 if ($options{commit}) {
     print colored("Moved files and cleaned old folders\n","green");
-    system sprintf("find \"%s\" -empty -delete", $_) for @ARGV;
+    -e $_ && system sprintf("find \"%s\" -empty -delete", $_) for @ARGV;
 }
 else {
     print colored("No changes made\n","yellow");
