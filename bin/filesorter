@@ -45,7 +45,7 @@ sub run {
         if ($self->commit) {
             print colored("Deleting " . $self->filepath . "\n", "red");
             unlink $self->filepath;
-            system sprintf("find $self->inpath -empty -delete");
+            system sprintf("find \"$self->inpath\" -empty -delete");
         }
         else {
             print colored("Would delete " . $self->filepath . "\n", "yellow");
@@ -73,7 +73,7 @@ sub check_filter {
                     return unless $self->$param == $1;
                 }
                 elsif ($regex =~ /^([<=>]+)(\d+)p?$/) {
-                    return unless eval "$self->$param $1 $2";
+                    return unless eval sprintf("%d %s %d", $self->$param, $1, $2);
                 }
                 else {
                     return unless $self->$param =~ /$regex/i;
@@ -121,9 +121,9 @@ sub get_story {
 }
 
 sub get_quality {
-    my ($self, %args) = @_;
+    my ($self) = @_;
 
-    if (!$self->duplicate && !$args{forcemediainfo} && $self->newfile =~ /(\W|^)(\d{3,4})p(\W|$)/i) {
+    if (!$self->duplicate && !$self->forcemediainfo && $self->newfile =~ /(\W|^)(\d{3,4})p(\W|$)/i) {
         $self->resolution($2);
     }
     elsif (!$self->duration || !$self->resolution || !$self->bitrate) {
@@ -395,7 +395,7 @@ Getopt::Long::GetOptions(
     "source=s"        => \@{$options{filter}{source}},
     "story=s"         => \@{$options{filter}{story}},
     "title=s"         => \@{$options{filter}{title}},
-    "resolution=s"    => \@{$options{filter}{Resolution}},
+    "resolution=s"    => \@{$options{filter}{resolution}},
     "filetype=s"      => \@{$options{filter}{filetype}},
     "date=s"          => \@{$options{filter}{date}},
 ) or help();
