@@ -244,8 +244,11 @@ sub build_movepath {
 
     return 1 if $self->onlyrename;
 
+    my $dir = abs_path($self->dir);
+    $dir = abs_path(".") . "/" . $self->dir unless $dir;
+
     my @movepath;
-    push @movepath, $self->dir;
+    push @movepath, $dir;
     push @movepath, scalar @{$self->source}? @{$self->source} : "Other";
     push @movepath, ("#Actors",join(" & ", sort @{$self->actor})) if scalar @{$self->actor};
     push @movepath, @{$self->story};
@@ -257,10 +260,7 @@ sub build_movepath {
 sub build_newpath {
     my $self = shift;
 
-    my $dir = abs_path($self->dir);
-    $dir = abs_path(".") . "/" . $self->dir unless $dir;
-
-    return join("/", $dir, $self->newfile);
+    return join("/", $self->dir, $self->newfile);
 }
 
 sub move_clean {
@@ -457,7 +457,7 @@ sub find_files {
                 convert        => $convert,
                 custom_data    => $options{custom},
                 delete         => $options{delete},
-                dir            => $options{onlyrename}? join("/", @filesplit) : $options{dir} || $arg,
+                dir            => $options{onlyrename}? join("/", @filesplit) : $options{dir} || ".",
                 dump           => $options{dump},
                 filepath       => abs_path($file),
                 filter         => $options{filter},
@@ -541,3 +541,4 @@ Filters:
     --date              \@Filter by date
 ";
 }
+
