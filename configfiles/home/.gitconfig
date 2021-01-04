@@ -55,7 +55,7 @@
     co = checkout
     co220 = checkout sw/dev/va220
     #############
-    d = diff
+    d = diff --ignore-space-change
     diffname = diff --name-only
     dm = difftool --no-prompt -t meld
     dc = diff --cached
@@ -147,7 +147,7 @@
     rpo = remote prune origin
     rpu = remote prune upstream
     #############
-    s = status -uno
+    s = status
     checkaut = "!git status -uno -s |  awk '{print $2}' | xargs git co"
     # ss = status -s -b
     ss = status -uno -b -s
