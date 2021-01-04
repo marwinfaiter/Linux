@@ -56,7 +56,10 @@ sub add_fork {
     }
 
     if (ref $code eq "CODE") {
-        my $data = $code->(@args);
+        my $data = eval {
+            $code->(@args);
+        };
+        print $@ if $@;
 
         $self->exit_child($data);
     }
@@ -125,9 +128,10 @@ sub _store {
     my ($self, $return_data) = @_;
 
     return unless $return_data;
+    my $return_data_ref = ref $return_data ? $return_data : \$return_data;
 
     my $storable_tempfile = File::Spec->catfile('/tmp', 'Features-Forker-' . $self->{parent_pid} . '-' . $$ . '.txt');
-    my $stored = eval { return Storable::store($return_data, $storable_tempfile); };
+    my $stored = eval { return Storable::store($return_data_ref, $storable_tempfile); };
 
     # handle Storables errors, IE logcarp or carp returning undef, or die (via logcroak or croak)
     if (not $stored or $@) {
@@ -157,7 +161,7 @@ sub _retrieve {
         unlink $storable_tempfile;
     }
 
-    return $retrieved;
+    return ref $retrieved eq "SCALAR" ? $$retrieved : $retrieved;
 }
 
 # Checks if any children have finished and sends them to $self->_print
