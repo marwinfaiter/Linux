@@ -359,6 +359,7 @@ Getopt::Long::GetOptions(
     "list"            => \$options{list},
     "dump"            => \$options{dump},
     "delete"          => \$options{delete},
+    duplicate        => \$options{duplicate},
 
     "dir=s"           => \$options{dir},
     "forcemediainfo"  => \$options{forcemediainfo},
@@ -401,33 +402,52 @@ Getopt::Long::GetOptions(
 ) or help();
 
 my @LIST = find_files(@ARGV);
-my $available_actors = get_available_actors(@LIST);
-
-while (my ($index, $file) = each @LIST) {
-    #printf("%-25s => %d/%d (%.2f%%)\n", $file->orgfile, $index+1, scalar @LIST, ($index+1)*100/scalar @LIST);
-    $file->available_actors($available_actors);
-    next if scalar @{$file->errors};
-    my $status = $file->run;
-    if ($status && $status == 2) {
-        undef $LIST[$index];
+if ($options{duplicate}) {
+    my $dupes_command = sprintf("echo '%s' | findimagedupes -", join("\n", map {$_->{filepath}} grep {$_->{filepath} =~ /\.(jpe?g|png|gif|bmp)$/} @LIST));
+    chomp(my @duplicates = `$dupes_command`);
+    my $counter = 1;
+    if ($options{commit}) {
+        my $movepath = sprintf("%s/#Duplicates", $options{dir});
+        system sprintf('find "%s" -empty -delete', $movepath);
+        foreach my $duplicate(@duplicates) {
+            $counter++ until !-e sprintf("%s/%03d", $movepath, $counter);
+            system sprintf('mkdir -p -m 700 "%s/%03d"', $movepath, $counter);
+            system sprintf('mv %s "%s/%03d"', join(" ", map {"\"$_\""} split(/ (?=\/)/, $duplicate)), $movepath, $counter);
+        }
+    }
+    else {
+        print Dumper \@duplicates;
     }
 }
+else {
+    my $available_actors = get_available_actors(@LIST);
 
-@LIST = grep { defined } @LIST;
+    while (my ($index, $file) = each @LIST) {
+        #printf("%-25s => %d/%d (%.2f%%)\n", $file->orgfile, $index+1, scalar @LIST, ($index+1)*100/scalar @LIST);
+        $file->available_actors($available_actors);
+        next if scalar @{$file->errors};
+        my $status = $file->run;
+        if ($status && $status == 2) {
+            undef $LIST[$index];
+        }
+    }
 
-foreach my $file (grep {scalar @{$_->errors} && $_->duplicate} @LIST) {
-        printf("Existing: \"%s\"\n",colored($file->dir."/".$file->newfile, ($file->overwrite?"red":$file->removeduplicate?"green":"reset")));
-        printf("New:      \"%s\"\n",colored($file->filepath, ($file->overwrite?"green":$file->removeduplicate?"red":"reset")));
-        printf("%s\n", colored("Errors:", "magenta"));
-        print join("\n",@{$file->errors})."\n\n";
-}
+    @LIST = grep { defined } @LIST;
 
-foreach my $file (grep {scalar @{$_->errors} && !$_->duplicate} @LIST) {
-    printf("Input:  \"%s\"\n%s\n%s\n\n",
-        $file->filepath,
-        colored("Errors:", "magenta"),
-        join("\n",@{$file->errors})
-    );
+    foreach my $file (grep {scalar @{$_->errors} && $_->duplicate} @LIST) {
+            printf("Existing: \"%s\"\n",colored($file->dir."/".$file->newfile, ($file->overwrite?"red":$file->removeduplicate?"green":"reset")));
+            printf("New:      \"%s\"\n",colored($file->filepath, ($file->overwrite?"green":$file->removeduplicate?"red":"reset")));
+            printf("%s\n", colored("Errors:", "magenta"));
+            print join("\n",@{$file->errors})."\n\n";
+    }
+
+    foreach my $file (grep {scalar @{$_->errors} && !$_->duplicate} @LIST) {
+        printf("Input:  \"%s\"\n%s\n%s\n\n",
+            $file->filepath,
+            colored("Errors:", "magenta"),
+            join("\n",@{$file->errors})
+        );
+    }
 }
 
 if ($options{commit}) {
