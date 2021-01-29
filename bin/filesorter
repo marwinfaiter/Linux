@@ -477,7 +477,7 @@ sub find_files {
                 convert        => $convert,
                 custom_data    => $options{custom},
                 delete         => $options{delete},
-                dir            => $options{onlyrename}? join("/", @filesplit) : $options{dir} || ".",
+                dir            => abs_path($options{onlyrename}? join("/", @filesplit) : $options{dir} || "."),
                 dump           => $options{dump},
                 filepath       => abs_path($file),
                 filter         => $options{filter},
@@ -561,4 +561,3 @@ Filters:
     --date              \@Filter by date
 ";
 }
-
