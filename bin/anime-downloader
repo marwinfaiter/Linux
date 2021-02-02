@@ -16,7 +16,8 @@ class anime_downloader:
     def __init__(self, provider, anime):
         self.providers = {
             "horriblesubs": HorribleSubs,
-            "erai_raws": Erai_raws
+            "erai_raws": Erai_raws,
+            "subsplease": Subsplease
         }
         if not provider.lower() in self.providers:
             raise ValueError("The specified provider \"%s\" does not exit" % provider)
@@ -39,6 +40,7 @@ class anime_downloader:
         if not self.get_anime_url(): return
 
         self.available_episodes = self.handler.get_episodes(self.anime_url)
+        if not self.available_episodes: return
         if not len(self.available_episodes["Batch"]) and not len(self.available_episodes["Episodes"]):
             print("Found no Episodes!")
             return True
@@ -250,14 +252,16 @@ class HorribleSubs:
                 found_animes.append({"title": link["title"], "href": link["href"]})
         return found_animes
 
-    def get_episodes(self):
-        if not self._get_anime_id(): return
+    def get_episodes(self, anime):
+        anime_id = self._get_anime_id(anime)
+        if not anime_id: return
+
         i = 0
         available_episodes = {
             "Batch": [],
             "Episodes": []
         }
-        response = self.scraper.post("https://horriblesubs.info/api.php?method=getshows&type=batch&showid="+self.anime_id)
+        response = self.scraper.post("https://horriblesubs.info/api.php?method=getshows&type=batch&showid="+anime_id)
         while True:
             if response.content.decode() == "DONE":break
             soup = BeautifulSoup(response.content.decode(),'html.parser')
@@ -286,15 +290,58 @@ class HorribleSubs:
             available_episodes[array] = sorted(available_episodes[array], key=lambda i: int(i["number"]))
         return available_episodes
 
-    def _get_anime_id(self):
-        anime = input("Which anime do you want to download?[1] ") or 1
-        response = self.scraper.post("https://horriblesubs.info"+self.found_animes[int(anime)])
+    def _get_anime_id(self, anime):
+        response = self.scraper.post("https://horriblesubs.info/" + anime)
         soup = BeautifulSoup(response.content.decode(),'html.parser')
         for row in soup.find_all("script"):
             text = BeautifulSoup(row.decode(),'html.parser').get_text()
             match = re.match(".*var hs_showid = (\d+).*",text)
-            if match: self.anime_id = match.group(1)
-        return True
+            if match: return match.group(1)
+        return
+
+class Subsplease:
+    def __init__(self):
+        self.scraper = cloudscraper.create_scraper()
+
+    def search_for_anime(self, anime):
+        found_animes = []
+        response = self.scraper.get("https://subsplease.org/shows/")
+        soup = BeautifulSoup(response.content.decode(),'html.parser')
+        for row in soup.find_all("div", class_="all-shows-link"):
+            link = BeautifulSoup(row.decode(),'html.parser').find("a")
+            if re.search(anime, link["title"], re.I):
+                found_animes.append({"href": link["href"], "title": link["title"]})
+        return found_animes
+
+    def get_episodes(self, anime):
+        available_episodes = {
+            "Batch": [],
+            "Episode": [],
+        }
+        anime_id = self._get_anime_id(anime)
+        if not anime_id: return
+
+        response = self.scraper.get("https://subsplease.org/api/?f=show&tz=Europe/Stockholm&sid=" + anime_id)
+        data = response.json()
+        for category in data:
+            for episode in data[category]:
+                subhash = {
+                    "number": data[category][episode]["episode"],
+                    "quality": {},
+                }
+                for quality in data[category][episode]["downloads"]:
+                    subhash["quality"][quality["res"]] = quality["magnet"] if quality["magnet"] else quality["torrent"]
+                available_episodes[category.capitalize()].append(subhash)
+        return {
+            "Batch": list(reversed(available_episodes["Batch"])),
+            "Episodes": list(reversed(available_episodes["Episode"])),
+        }
+
+    def _get_anime_id(self, anime):
+        response = self.scraper.get("https://subsplease.org" + anime)
+        soup = BeautifulSoup(response.content.decode(),'html.parser')
+        table = soup.find(id="show-release-table")
+        return table["sid"]
 
 def signal_handler(sig, frame):
         print('\nAborting script!')
@@ -307,7 +354,7 @@ parser = OptionParser(
     epilog="Written by Marwinfaiter"
 )
 
-parser.add_option("-p", "--provider", dest="provider", help="Which provider to use [horriblesubs, erai_raws] default is erai_raws", default="erai_raws")
+parser.add_option("-p", "--provider", dest="provider", help="Which provider to use [horriblesubs, erai_raws, subsplease] default is erai_raws", default="erai_raws")
 parser.add_option("-a", "--all", dest="all", help="List all available animes", action="store_true")
 
 (options, args) = parser.parse_args()
