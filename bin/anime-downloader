@@ -7,14 +7,294 @@ import os
 import subprocess
 import signal
 import sys
+import cloudscraper
+from bs4 import BeautifulSoup
+
 from optparse import OptionParser
 
-pythonlib = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'lib', 'python'))
-if not pythonlib in sys.path:
-    sys.path.insert(1, pythonlib)
-del pythonlib
+class anime_downloader:
+    def __init__(self, provider, anime):
+        self.providers = {
+            "horriblesubs": HorribleSubs,
+            "erai_raws": Erai_raws
+        }
+        if not provider.lower() in self.providers:
+            raise ValueError("The specified provider \"%s\" does not exit" % provider)
 
-from Webscraper.Anime_downloader import Anime_downloader as AD
+        self.anime = anime
+        self.provider = provider
+        self.chosen_episodes = []
+        self.chosen_qualites_from_episodes = []
+        self.handler = self.providers[provider.lower()]()
+        if not hasattr(self, "handler"):
+            raise ValueError("Couldn't create handler for %s" % self.provider)
+
+    def run(self):
+        self.found_animes = self.handler.search_for_anime(self.anime)
+        if not len(self.found_animes):
+            print("Found no animes!")
+            return True
+
+        if not self.print_available_animes(): return
+        if not self.get_anime_url(): return
+
+        self.available_episodes = self.handler.get_episodes(self.anime_url)
+        if not len(self.available_episodes["Batch"]) and not len(self.available_episodes["Episodes"]):
+            print("Found no Episodes!")
+            return True
+        if not self.print_available_episodes(): return
+
+        if not self.filter_to_chosen_episodes(): return
+        if not len(self.chosen_episodes):
+            print("Found no Episodes matching your input!")
+            return True
+        if not self.print_chosen_episodes(): return
+
+        if not self.filter_to_chosen_quality(): return
+        if not len(self.chosen_qualites_from_episodes):
+            print("Found no Episodes matching your input!")
+            return True
+        if not self.print_chosen_quality(): return
+
+        if not self.send_to_deluge(): return
+        return True
+
+    def filter_from_array(self, text, array):
+        return [k for k in array if k["number"] == text]
+
+    def print_available_animes(self):
+        print("="*40)
+        for anime in self.found_animes:
+            print("%s: %s" % (self.found_animes.index(anime), anime["title"]))
+        print("="*40)
+        return True
+
+    def print_available_episodes(self):
+        print("Available episodes: ")
+        print ("="*40)
+        for array in self.available_episodes.keys():
+            if not len(self.available_episodes[array]): continue
+            print(array + ":")
+            for episode in self.available_episodes[array]:
+                qualities = ", ".join(map(lambda x: str(x+"p"), sorted(episode["quality"].keys(), key=int)))
+                print("  %s: %s" % (episode["number"], qualities))
+        print ("="*40)
+        return True
+
+    def print_chosen_episodes(self):
+        print("Matches:")
+        print ("="*40)
+        for episode in self.chosen_episodes:
+            qualities = ", ".join(map(lambda x: str(x+"p"), sorted(episode["quality"].keys(), key=int)))
+            print("%s: %s" % (episode["number"], qualities))
+        print ("="*40)
+        return True
+
+    def print_chosen_quality(self):
+        print("Matches:")
+        print ("="*40)
+        for episode in self.chosen_qualites_from_episodes:
+            print (episode["number"]+": "+episode["quality"]+"p")
+        print ("="*40)
+        return True
+
+    def get_anime_url(self):
+        chosen_anime = input("Which anime do you want to download?[0] ") or 0
+        self.anime_url = self.found_animes[int(chosen_anime)]["href"]
+        return True
+
+    def filter_to_chosen_episodes(self):
+        episodelist = input("Which episodes do you want?(comma separated list)\nx-y: all episodes betweeen and including x to y\nx- : all episodes after and including x\n -y: all episodes until including y\n[All except batches]: ")
+        array = episodelist.split(",")
+
+        if array[0] == "":
+            self.chosen_episodes = self.available_episodes["Episodes"]
+            return True
+        for row in array:
+            (x,y) = (None, None)
+            if re.match("^\d*-\d*$", row):
+                batcharray = self.filter_from_array(row, self.available_episodes["Batch"])
+                if len(batcharray):
+                    self.chosen_episodes.extend(batcharray)
+                    continue
+                (x,y) = row.split("-")
+                x = x or self.available_episodes["Episodes"][0]["number"]
+                y = y or self.available_episodes["Episodes"][-1]["number"]
+            else:x = y = row
+
+            if int(x) > int(y) or \
+            len(self.filter_from_array(x, self.available_episodes["Episodes"])) == 0 or \
+            len(self.filter_from_array(y, self.available_episodes["Episodes"])) == 0:
+                sys.exit("Invalid episode range or episode doesn't exist: "+row)
+
+            for i in range(int(x),int(y)+1):
+                episodesarray = self.filter_from_array(str(i), self.available_episodes["Episodes"])
+                if len(episodesarray) > 0:
+                    self.chosen_episodes.extend(episodesarray)
+        return True
+
+    def filter_to_chosen_quality(self):
+        quality = input("Which quality do you want?[Best possible]: ").replace("p", "")
+
+        for episode in self.chosen_episodes:
+            if not len(episode["quality"].keys()):
+                print("Episode %s doesn't have any available qualities" % (episode["number"]))
+                continue
+            if quality == "":
+                quality = sorted(episode["quality"].keys(), key=int)[-1]
+            if not quality in episode["quality"]:
+                print("Episode %s: %s not available(%s)" % (episode["number"], quality, ", ".join(sorted(episode["quality"].keys(), key=int))))
+                continue
+
+            self.chosen_qualites_from_episodes.append(
+                {
+                    "number": episode["number"],
+                    "quality": quality,
+                    "link": episode["quality"][quality]
+                }
+            )
+        return True
+
+    def send_to_deluge(self):
+        confirm = input("Do you want to download these files?(yes/no)[yes]: ") or "yes"
+        if confirm.lower() != "yes": return True
+
+        move = subprocess.check_output(["deluge-console","config","move_completed"]).strip().decode().split(": ")[1].lower()
+        move_complete = input("Do you want to move completed?(yes/no)[no]: ") or "no"
+
+        if move_complete.lower() == "no":subprocess.run(["deluge-console","config","-s","move_completed","false"],stdout=subprocess.DEVNULL)
+        elif move_complete.lower() == "yes":subprocess.run(["deluge-console","config","-s","move_completed","true"],stdout=subprocess.DEVNULL)
+
+        array = ["deluge-console","add"]
+        for episode in self.chosen_qualites_from_episodes:
+            array.append(episode["link"])
+        subprocess.run(array)
+        subprocess.run(["deluge-console","config","-s","move_completed",move],stdout=subprocess.DEVNULL)
+        return True
+
+class Erai_raws:
+    def __init__(self):
+        self.scraper = cloudscraper.create_scraper()
+
+    def search_for_anime(self, anime):
+        found_animes = []
+        response = self.scraper.get("https://erai-raws.info/anime-list/")
+        soup = BeautifulSoup(response.content.decode(),'html.parser')
+        for row in soup.find_all("div", class_="ind-show"):
+            link = BeautifulSoup(row.decode(),'html.parser').find("a")
+            if re.search(anime, link["title"], re.I):
+                found_animes.append({"href": link["href"], "title": link["title"]})
+        return found_animes
+
+    def get_episodes(self, anime_url):
+        urls = {
+            "Batch": {
+                "url": 'https://www.erai-raws.info/wp-admin/admin-ajax.php',
+                "data": {
+                    "action": "load_more_3",
+                    "query": '{"anime-list":"'+anime_url+'","order":"ASC","nopaging":true}'
+                }
+            },
+            "Episodes": {
+                "url": 'https://www.erai-raws.info/wp-admin/admin-ajax.php',
+                "data": {
+                    "action": "load_more_0",
+                    "query": '{"anime-list":"'+anime_url+'","order":"ASC","nopaging":true}',
+                }
+            }
+        }
+        available_episodes = {
+            "Batch": [],
+            "Episodes": []
+        }
+        for url in urls:
+            response = self.scraper.post(urls[url]["url"], data = urls[url]["data"])
+            soup = BeautifulSoup(response.content.decode(),'html.parser')
+            for article in soup.find_all("article"):
+                episode_div = article.find("div")
+                episode_id = episode_div["id"]
+                episode_number = episode_div.find("h1").find_all("a")[-1].find("font").text
+                episode_number = re.sub("\n", "", episode_number)
+                episode_number = re.sub("\s+", " ", episode_number)
+                episode_number = episode_number.strip()
+                episode_number = re.sub(" ~ ", "-", episode_number)
+
+                subhash = {
+                    "id": episode_id,
+                    "number": episode_number,
+                    "quality": {},
+                }
+
+                episode_quality_divs = episode_div.find_all("div",class_="release-links")
+                for quality_div in episode_quality_divs:
+                    quality = re.sub("p|«|»","",quality_div.find("i").text)
+                    for a in quality_div.find_all("a"):
+                        if a.text == "Magnet":
+                            subhash["quality"][quality] = a["href"]
+                        elif a.text == "Torrent" and not quality in subhash["quality"]:
+                            subhash["quality"][quality] = a["href"]
+                available_episodes[url].append(subhash)
+        return available_episodes
+
+class HorribleSubs:
+    def __init__(self):
+        self.scraper = cloudscraper.create_scraper()
+
+    def search_for_anime(self, anime):
+        found_animes = []
+        response = scraper.get("https://horriblesubs.info/shows/")
+        soup = BeautifulSoup(response.content.decode(),'html.parser')
+        for row in soup.find_all("div", class_="ind-show"):
+            link = BeautifulSoup(row.decode(),'html.parser').find("a")
+            if re.match(".*"+self.anime+".*",link["title"], re.I):
+                found_animes.append({"title": link["title"], "href": link["href"]})
+        return found_animes
+
+    def get_episodes(self):
+        if not self._get_anime_id(): return
+        i = 0
+        available_episodes = {
+            "Batch": [],
+            "Episodes": []
+        }
+        response = self.scraper.post("https://horriblesubs.info/api.php?method=getshows&type=batch&showid="+self.anime_id)
+        while True:
+            if response.content.decode() == "DONE":break
+            soup = BeautifulSoup(response.content.decode(),'html.parser')
+            for div in soup.find_all("div",class_="rls-info-container"):
+                episode = re.sub("^0*","",div.get("id"))
+                if episode == "": continue
+                if i == 0 and not re.match("^\d+-\d+$", episode): continue
+                elif i > 0 and not re.match("^\d+$", episode): continue
+
+                subhash = {
+                    "number": episode,
+                    "quality": {}
+                }
+
+                for link in div.find_all("div", class_="rls-link"):
+                    if link.find("a",{"title":"Magnet Link"}):
+                        subhash["quality"][re.sub("\d+-|p","",link.get("id"))] = link.find("a",{"title":"Magnet Link"}).get("href")
+                if i == 0:
+                    available_episodes["Batch"].append(subhash)
+                else:
+                    available_episodes["Episodes"].append(subhash)
+            response = self.scraper.post("https://horriblesubs.info/api.php?method=getshows&type=show&showid="+self.anime_id+"&nextid="+str(i))
+            i += 1
+
+        for array in available_episodes:
+            available_episodes[array] = sorted(available_episodes[array], key=lambda i: int(i["number"]))
+        return available_episodes
+
+    def _get_anime_id(self):
+        anime = input("Which anime do you want to download?[1] ") or 1
+        response = self.scraper.post("https://horriblesubs.info"+self.found_animes[int(anime)])
+        soup = BeautifulSoup(response.content.decode(),'html.parser')
+        for row in soup.find_all("script"):
+            text = BeautifulSoup(row.decode(),'html.parser').get_text()
+            match = re.match(".*var hs_showid = (\d+).*",text)
+            if match: self.anime_id = match.group(1)
+        return True
 
 def signal_handler(sig, frame):
         print('\nAborting script!')
@@ -35,8 +315,8 @@ parser.add_option("-a", "--all", dest="all", help="List all available animes", a
 if not options.all and not len(args): sys.exit(parser.print_help())
 
 try:
-    anime_downloader = AD(options.provider, ' '.join(args))
-    anime_downloader.run()
+    ad = anime_downloader(options.provider, ' '.join(args))
+    ad.run()
 except ValueError as error:
     print(error)
     sys.exit("Aborting script!")
