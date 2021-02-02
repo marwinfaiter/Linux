@@ -147,7 +147,7 @@
     rpo = remote prune origin
     rpu = remote prune upstream
     #############
-    s = status
+    s = status -uall
     checkaut = "!git status -uno -s |  awk '{print $2}' | xargs git co"
     # ss = status -s -b
     ss = status -uno -b -s
