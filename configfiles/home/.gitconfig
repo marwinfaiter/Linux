@@ -1,6 +1,6 @@
 [user]
-	email = email
-	name = name
+	email = noobgubbe@live.se
+	name = Marwin Faiter
 # [core]
 #   editor = geany --new-instance
 # [gui]
@@ -176,3 +176,10 @@
     pager = less -R
 [color]
     ui = true
+[credential]
+[credentials]
+	helper = manager
+[credential]
+[credential]
+[credential]
+	helper = cache --timeout=3600
