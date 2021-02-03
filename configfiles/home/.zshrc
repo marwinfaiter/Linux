@@ -100,10 +100,10 @@ source $ZSH/oh-my-zsh.sh
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
-alias df=pydf
-export PATH="$HOME/Linux-Scripts/bin:$PATH"
+export PATH="$HOME/git/Linux/bin:$PATH"
 export EDITOR=vim
 export TERM=xterm-256color
+export NCURSES_NO_UTF8_ACS=1
 setopt EXTENDED_HISTORY
 setopt HIST_EXPIRE_DUPS_FIRST
 setopt HIST_IGNORE_DUPS
@@ -112,3 +112,5 @@ setopt HIST_IGNORE_SPACE
 setopt HIST_FIND_NO_DUPS
 setopt HIST_SAVE_NO_DUPS
 setopt HIST_BEEP
+
+alias df=pydf
