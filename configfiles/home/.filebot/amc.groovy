@@ -4,7 +4,7 @@
 // log input parameters
 log.fine("Run script [$_args.script] at [$now]")
 
-_def.each{ n, v -> log.finest('Parameter: ' + [n, n =~ /plex|kodi|pushover|pushbullet|mail|myepisodes/ ? '*****' : v].join(' = ')) }
+_def.each{ n, v -> log.finest('Parameter: ' + [n, n =~ /plex|kodi|pushover|pushbullet|discord|mail|myepisodes/ ? '*****' : v].join(' = ')) }
 args.withIndex().each{ f, i -> if (f.exists()) { log.finest "Argument[$i]: $f" } else { log.warning "Argument[$i]: File does not exist: $f" } }
 
 
@@ -14,14 +14,13 @@ failOnError = _args.conflict.equalsIgnoreCase('fail')
 testRun = _args.action.equalsIgnoreCase('test')
 
 // --output folder must be a valid folder
-outputFolder = tryLogCatch{ any{ _args.output }{ '.' }.toFile().getCanonicalFile() }
+outputFolder = _args.absoluteOutputFolder ?: ('.' as File).getCanonicalFile()
 
 // enable/disable features as specified via --def parameters
-unsorted  = tryQuietly{ unsorted.toBoolean() }
+unsorted  = tryQuietly{ unsorted.toBoolean() && !testRun }
 music     = tryQuietly{ music.toBoolean() }
 subtitles = tryQuietly{ subtitles.split(/\W+/) as List }
 artwork   = tryQuietly{ artwork.toBoolean() && !testRun }
-extras    = tryQuietly{ extras.toBoolean() }
 clean     = tryQuietly{ clean.toBoolean() }
 exec      = tryQuietly{ exec.toString() }
 
@@ -35,121 +34,89 @@ extractFolder      = tryQuietly{ extractFolder as File }
 skipExtract        = tryQuietly{ skipExtract.toBoolean() }
 deleteAfterExtract = tryQuietly{ deleteAfterExtract.toBoolean() }
 excludeList        = tryQuietly{ def f = excludeList as File; f.isAbsolute() ? f : outputFolder.resolve(f.path) }
+excludeLink        = tryQuietly{ excludeLink.toBoolean() }
 myepisodes         = tryQuietly{ myepisodes.split(':', 2) as List }
 gmail              = tryQuietly{ gmail.split(':', 2) as List }
 mail               = tryQuietly{ mail.split(':', 5) as List }
 pushover           = tryQuietly{ pushover.split(':', 2) as List }
 pushbullet         = tryQuietly{ pushbullet.toString() }
-storeReport        = tryQuietly{ storeReport.toBoolean() }
+discord            = tryQuietly{ discord.toString() }
+storeReport        = tryQuietly{ def f = storeReport as File; f.isAbsolute() ? f : outputFolder.resolve(f.path) }
 reportError        = tryQuietly{ reportError.toBoolean() }
 
 // user-defined filters
 label       = any{ ut_label }{ null }
 ignore      = any{ ignore }{ null }
-minFileSize = any{ minFileSize.toLong() }{ 0 * 1000L * 1000L }
-minLengthMS = any{ minLengthMS.toLong() }{ 0 * 60 * 1000L }
+minFileSize = any{ minFileSize.toLong() }{ 0 * 50 * 1000L * 1000L }
+minLengthMS = any{ minLengthMS.toLong() }{ 0 * 10 * 60 * 1000L }
 
-// series/anime/movie format expressions
-seriesFormat   = any{ seriesFormat   }{ '{plex}' }
-animeFormat    = any{ animeFormat    }{ '{plex}' }
-movieFormat    = any{ movieFormat    }{ '{plex}' }
-musicFormat    = any{ musicFormat    }{ '{plex}' }
-unsortedFormat = any{ unsortedFormat }{ 'Unsorted/{file.structurePathTail}' }
+// database preferences
+seriesDB = any{ seriesDB }{ 'TheTVDB' }
+animeDB = any{ animeDB }{ 'AniDB' }
+movieDB = any{ movieDB }{ 'TheMovieDB' }
+musicDB = any{ musicDB }{ 'ID3' }
 
-
-
-// force Movie / TV Series / Anime behaviour
-def forceMovie(f) {
-	label =~ /^(?i:Movie|Film|Concert|UFC)/ || f.dir.listPath().any{ it.name ==~ /(?i:Movies|Movie)/ } || f.isMovie() || any{ (f.isVideo() || f.isSubtitle()) && !forceSeries(f) && getMediaInfo(f, '{minutes}').toInteger() >= 100 }{ false }
-}
-
-def forceSeries(f) {
-	label =~ /^(?i:TV|Show|Series|Documentary)/ || f.dir.listPath().any{ it.name ==~ /(?i:TV.Shows|TV.Series)/ } || f.path =~ /(?<=\b|_)(?i:tv[sp]-|Season\D?\d{1,2}|\d{4}.S\d{2})(?=\b|_)/ || parseEpisodeNumber(f.path, true) || parseDate(f.path)
-}
-
-def forceAnime(f) {
-	label =~ /^(?i:Anime)/ || f.dir.listPath().any{ it.name ==~ /(?i:Anime)/ } || ((f.isVideo() || f.isSubtitle()) && (f.name =~ /[\(\[]\p{XDigit}{8}[\]\)]/ || any{ getMediaInfo(f, '{media.AudioLanguageList} {media.TextCodecList}').tokenize().containsAll(['Japanese', 'ASS']) && (parseEpisodeNumber(f.name, false) != null || getMediaInfo(f, '{minutes}').toInteger() < 60) }{ false }))
-}
-
-def forceAudio(f) {
-	label =~ /^(?i:audio|music|music.video)/ || (f.isAudio() && !f.isVideo())
-}
-
-def forceIgnore(f) {
-	label =~ /^(?i:games|ebook|other|ignore)/
-}
+// series / anime / movie format expressions
+seriesFormat   = any{ seriesFormat   }{ _args.format }{ "/mnt/NAS/Media/Tv-Shows/{n.replaceAll(/[.-]/)}/{episode.special ? 'Specials' : 'Season '+{s.pad(2)}}/{n.replaceAll(/[.-]/)} {episode.special ? 'S00E'+{special.pad(2)}:{s00e00}} {t.replaceAll(/[:?]/).slash().replaceAll('  ')} {vf} {source} {hdr} {vc} {group.replaceAll(/TBS\\[RARBG/, 'TBS RARBG')}" }{ '{plex}' }
+animeFormat    = any{ animeFormat    }{ _args.format }{ '{plex}' }
+movieFormat    = any{ movieFormat    }{ _args.format }{ "/mnt/NAS/Media/Movies/{hd}/{ny.replace('.','')} [{vf}]/{n.replaceAll(/[.:?]/).slash().replaceAll('  ')} {y} {vf} {source} {bitdepth}bit {hdr} {vc+'-'}{ac+'-'}{af} {group}" }{ '{plex}' }
+musicFormat    = any{ musicFormat    }{ _args.format }{ '{plex}' }
+unsortedFormat = any{ unsortedFormat }{ 'Unsorted/{f.structurePathTail}' }
 
 
 
 // include artwork/nfo, pushover/pushbullet and ant utilities as required
 if (artwork || kodi || plex || emby) { include('lib/htpc') }
-if (pushover || pushbullet ) { include('lib/web') }
-if (gmail || mail) { include('lib/ant') }
-
-
-
-// error reporting functions
-def sendEmailReport(title, message, messagetype) {
-	if (gmail) {
-		sendGmail(
-			subject: title, message: message, messagemimetype: messagetype,
-			to: any{ mailto } { gmail[0].contains('@') ? gmail[0] : gmail[0] + '@gmail.com' },		// mail to self by default
-			user: gmail[0].contains('@') ? gmail[0] : gmail[0] + '@gmail.com', password: gmail[1]
-		)
-	}
-	if (mail) {
-		sendmail(
-			subject: title, message: message, messagemimetype: messagetype,
-			mailhost: mail[0], mailport: mail[1], from: mail[2], to: mailto,
-			user: mail[3], password: mail[4]
-		)
-	}
-}
-
-def fail(message) {
-	if (reportError) {
-		sendEmailReport('[FileBot] Failure', message as String, 'text/plain')
-	}
-	die(message)
-}
+if (pushover || pushbullet || gmail || mail || discord) { include('lib/web') }
 
 
 
 // check input parameters
 def ut = _def.findAll{ k, v -> k.startsWith('ut_') }.collectEntries{ k, v ->
-	if (v ==~ /[%$]\p{Alnum}|\p{Punct}+/) {
+	if (v ==~ /[%$][\p{Alnum}\p{Punct}]+/) {
 		log.warning "Bad $k value: $v"
 		v = null
 	}
 	return [k.substring(3), v ? v : null]
 }
 
+_def.each{ k, v ->
+	if (v =~ /^[@'"]|[@'"]$/) {
+		log.warning "Bad $k value: $v"
+	}
+}
 
+if (_args.db) {
+	log.warning "Invalid usage: The --db option has no effect"
+}
 
 // sanity checks
 if (outputFolder == null || !outputFolder.isDirectory()) {
-	fail "Illegal usage: output folder must exist and must be a directory: $outputFolder"
+	die "Invalid usage: output folder must exist and must be a directory: $outputFolder"
 }
 
 if (ut.dir) {
 	if (ut.state_allow && !(ut.state ==~ ut.state_allow)) {
-		fail "Illegal state: $ut.state != $ut.state_allow"
+		die "Invalid state: $ut.state != $ut.state_allow", ExitCode.NOOP
 	}
 	if (args.size() > 0) {
-		fail "Illegal usage: use either script parameters $ut or file arguments $args but not both"
+		die "Invalid usage: use either script parameters $ut or file arguments $args but not both"
 	}
 	if (ut.dir == '/') {
-		fail "Illegal usage: No! Are you insane? You can't just pass in the entire filesystem. Think long and hard about what you just tried to do."
+		die "Invalid usage: No! Are you insane? You can't just pass in the entire filesystem. Think long and hard about what you just tried to do."
 	}
 	if (ut.dir.toFile() in outputFolder.listPath()) {
-		fail "Illegal usage: output folder [$outputFolder] must be separate from input folder $ut"
+		die "Invalid usage: output folder [$outputFolder] must not be inside input folder [$ut.dir] and vice versa"
+	}
+	if (outputFolder in ut.dir.toFile().listPath()) {
+		log.warning "Invalid usage: input folder [$ut.dir] must not be inside output folder [$outputFolder] and vice versa"
 	}
 } else if (args.size() == 0) {
-	fail "Illegal usage: no input"
+	die "Invalid usage: no input"
 } else if (args.any{ f -> f in outputFolder.listPath() }) {
-	fail "Illegal usage: output folder [$outputFolder] must be separate from input arguments $args"
+	die "Invalid usage: output folder [$outputFolder] must be separate from input arguments $args"
 } else if (args.any{ f -> f in File.listRoots() }) {
-	fail "Illegal usage: input $args must not include a filesystem root"
+	die "Invalid usage: input $args must not include a filesystem root"
 }
 
 
@@ -184,14 +151,14 @@ if (excludeList) {
 	if (excludeList.exists()) {
 		try {
 			excludePathSet.load(excludeList)
-		} catch(Exception e) {
-			fail "Failed to load excludeList: $e"
+		} catch(e) {
+			die "Failed to read excludes: $excludeList: $e"
 		}
 		log.fine "Use excludes: $excludeList (${excludePathSet.size()})"
 	} else {
 		log.fine "Use excludes: $excludeList"
 		if ((!excludeList.parentFile.isDirectory() && !excludeList.parentFile.mkdirs()) || (!excludeList.isFile() && !excludeList.createNewFile())) {
-			fail "Failed to create excludeList: $excludeList"
+			die "Failed to create excludes: $excludeList"
 		}
 	}
 }
@@ -201,6 +168,11 @@ extractedArchives = []
 temporaryFiles = []
 
 def extract(f) {
+	// avoid cyclical archives that extract to the same output folder over and over
+	if (f in extractedArchives) {
+		return []
+	}
+
 	def folder = new File(extractFolder ?: f.dir, f.nameWithoutExtension)
 	def files = extract(file: f, output: folder.resolve(f.dir.name), conflict: 'auto', filter: { it.isArchive() || it.isVideo() || it.isSubtitle() || (music && it.isAudio()) }, forceExtractAll: true) ?: []
 
@@ -209,7 +181,7 @@ def extract(f) {
 	temporaryFiles += files
 
 	// resolve newly extracted files and deal with disk folders and hidden files correctly
-	return folder
+	return [folder]
 }
 
 
@@ -224,7 +196,7 @@ def acceptFile(f) {
 		return false
 	}
 
-	if (f.isVideo() && f.name =~ /(?<=\b|_)(?i:Sample|Trailer|Extras|Extra.Episodes|Bonus.Features|Music.Video|Scrapbook|Behind.the.Scenes|Extended.Scenes|Deleted.Scenes|Mini.Series|s\d{2}c\d{2}|S\d+EXTRA|\d+xEXTRA|NCED|NCOP|(OP|ED)\d+|Formula.1.\d{4}|[sS]\d+[eE]00)(?=\b|_)/) {
+	if (f.isVideo() && f.name =~ /(?<=\b|_)(?i:Sample|Trailer|Extras|Featurettes|Extra.Episodes|Bonus.Features|Music.Video|Scrapbook|Behind.the.Scenes|Extended.Scenes|Deleted.Scenes|Mini.Series|s\d{2}c\d{2}|S\d+EXTRA|\d+xEXTRA|NCED|NCOP|(OP|ED)\d+|Formula.1.\d{4}|[sS]\d+[eE]00)(?=\b|_)/) {
 		log.finest "Ignore video extra: $f"
 		return false
 	}
@@ -245,6 +217,18 @@ def acceptFile(f) {
 		return true
 	}
 
+	// check if file exists
+	if (!f.isFile()) {
+		log.warning "File does not exist: $f"
+		return false
+	}
+
+	// ignore previously linked files
+	if (excludeLink && (f.symlink || f.linkCount != 1)) {
+		log.finest "Exclude superfluous link: $f [$f.linkCount] $f.key"
+		return false
+	}
+
 	// accept archives if the extract feature is enabled
 	if (f.isArchive() || f.hasExtension('001')) {
 		return !skipExtract
@@ -258,18 +242,18 @@ def acceptFile(f) {
 
 	// ignore small video files
 	if (minFileSize > 0 && f.isVideo() && f.length() < minFileSize) {
-		log.fine "Skip small video file: $f"
+		log.fine "Skip small video file: $f [$f.displaySize]"
 		return false
 	}
 
 	// ignore short videos
-	if (minLengthMS > 0 && f.isVideo() && any{ getMediaInfo(f, '{minutes}').toLong() * 60 * 1000L < minLengthMS }{ false /* default if MediaInfo fails */ }) {
-		log.fine "Skip short video: $f"
+	if (minLengthMS > 0 && f.isVideo() && any{ f.mediaCharacteristics.duration.toMillis() < minLengthMS }{ false }) {
+		log.fine "Skip short video: $f [$f.mediaCharacteristics.duration]"
 		return false
 	}
 
-	// ignore subtitle files without matching video file in the same or parent folder
-	if (f.isSubtitle() && ![f, f.dir].findResults{ it.dir }.any{ it.listFiles{ it.isVideo() && f.isDerived(it) }}) {
+	// ignore subtitle files without matching video file in the same or parent folder (in strict mode only)
+	if (_args.strict && f.isSubtitle() && ![f, f.dir].findResults{ it.dir }.any{ it.listFiles{ it.isVideo() && f.isDerived(it) }}) {
 		log.fine "Ignore orphaned subtitles: $f"
 		return false
 	}
@@ -284,16 +268,14 @@ def resolveInput(f) {
 	// resolve folder recursively, except disk folders
 	if (f.isDirectory()) {
 		if (f.isDisk()) {
+			log.finest "Disk Folder: $f"
 			return f
 		}
 		return f.listFiles{ acceptFile(it) }.collect{ resolveInput(it) }
 	}
 
 	if (f.isArchive() || f.hasExtension('001')) {
-		def folder = extract(f)
-		if (folder.isDirectory()) {
-			return resolveInput(folder)
-		}
+		return extract(f).findAll{ acceptFile(it) }.collect{ resolveInput(it) }
 	}
 
 	return f
@@ -306,104 +288,62 @@ def input = roots.findAll{ acceptFile(it) }.flatten{ resolveInput(it) }.toSorted
 
 // update exclude list with all input that will be processed during this run
 if (excludeList && !testRun) {
-	excludePathSet.append(excludeList, extractedArchives, input)
+	try {
+		excludePathSet.append(excludeList, extractedArchives, input)
+	} catch(e) {
+		die "Failed to write excludes: $excludeList: $e"
+	}
 }
 
 // print exclude and input sets for logging
-input.each{ log.fine "Input: $it" }
+input.each{ f -> log.fine "Input: $f" }
+
+// print xattr metadata
+input.each{ f -> if (f.metadata) log.finest "xattr: [$f.name] => [$f.metadata]" }
 
 // early abort if there is nothing to do
 if (input.size() == 0) {
-	log.warning "No files selected for processing"
-	return
+	die "No files selected for processing", ExitCode.NOOP
 }
 
 
 
-// group episodes/movies and rename according to Plex standards
-def groups = input.groupBy{ f ->
-	// print xattr metadata
-	if (f.metadata) {
-		log.finest "xattr: [$f.name] => [$f.metadata]"
+// force Movie / TV Series / Anime behaviour
+def forceGroup() {
+	switch(label) {
+		case ~/.*(?i:Movie|Film|Concert|UFC).*/:
+			log.fine "Process as Movie [$label]"
+			return AutoDetection.Group.Movie
+		case ~/.*(?i:TV|Show|Series|Documentary).*/:
+			log.fine "Process as TV Series [$label]"
+			return AutoDetection.Group.Series
+		case ~/.*(?i:Anime).*/:
+			log.fine "Process as Anime [$label]"
+			return AutoDetection.Group.Anime
+		case ~/.*(?i:Audio|Music|Music.Video).*/:
+			log.fine "Process as Music [$label]"
+			return AutoDetection.Group.Music
+		case ~/.*(?i:games|book|other|ignore).*/:
+			log.fine "Process as Unsorted [$label]"
+			return AutoDetection.Group.None
+		default:
+			return null
 	}
-
-	// skip auto-detection if possible
-	if (forceIgnore(f))
-		return []
-	if (music && forceAudio(f)) // process audio only if music mode is enabled
-		return [music: f.dir.name]
-	if (forceMovie(f))
-		return [mov:   detectMovie(f, false)]
-	if (forceSeries(f))
-		return [tvs:   detectSeriesName(f) ?: detectSeriesName(input.findAll{ s -> f.dir == s.dir && s.isVideo() })]
-	if (forceAnime(f))
-		return [anime: detectAnimeName(f) ?: detectAnimeName(input.findAll{ s -> f.dir == s.dir && s.isVideo() })]
-
-
-	def tvs = detectSeriesName(f)
-	def mov = detectMovie(f, false)
-	log.fine "$f.name [series: $tvs, movie: $mov]"
-
-	// DECIDE EPISODE VS MOVIE (IF NOT CLEAR)
-	if (tvs && mov) {
-		def norm = { s -> s.ascii().normalizePunctuation().lower().space(' ') }
-		def dn = norm(guessMovieFolder(f)?.name ?: '')
-		def fn = norm(f.nameWithoutExtension)
-		def sn = norm(tvs)
-		def mn = norm(mov.name)
-		def my = mov.year as String
-
-		// S00E00 | 2012.07.21 | One Piece 217 | Firefly - Serenity | [Taken 1, Taken 2, Taken 3, Taken 4, ..., Taken 10]
-		def metrics = [
-			[tvs: -1, mov:  0, fun: { mn == fn } ],
-			[tvs: -1, mov:  0, fun: { mov.year >= 1950 && f.listPath().reverse().take(3).find{ it.name.contains(my) && parseEpisodeNumber(it.name.after(my), false) == null } } ],
-			[tvs: -1, mov:  0, fun: { mn =~ sn && [dn, fn].find{ it =~ /\b(19|20)\d{2}\b/ && parseEpisodeNumber(it.after(/\b(19|20)\d{2}\b/), false) == null } } ],
-			[tvs:  5, mov: -1, fun: { parseEpisodeNumber(fn, true) || parseDate(fn) } ],
-			[tvs:  5, mov: -1, fun: { f.dir.listFiles{ it.isVideo() && (dn =~ sn || norm(it.name) =~ sn) && it.name =~ /\d{1,3}/}.findResults{ it.name.matchAll(/\d{1,3}/) as Set }.unique().size() >= 10 } ],
-			[tvs:  1, mov: -1, fun: { fn.after(sn) ==~ /.{0,3}\s-\s.+/ && matchMovie(fn) == null } ],
-			[tvs:  1, mov: -1, fun: { [dn, fn].find{ it =~ sn && matchMovie(it) == null } && (parseEpisodeNumber(stripReleaseInfo(fn.after(sn), false), false) || stripReleaseInfo(fn.after(sn), false) =~ /\D\d{1,2}\D{1,3}\d{1,2}\D/) && matchMovie(fn) == null } ],
-			[tvs: -1, mov:  1, fun: { fn =~ /tt\d{7}/ } ],
-			[tvs: -1, mov:  1, fun: { f.nameWithoutExtension ==~ /[\D\s_.]+/ } ],
-			[tvs: -1, mov:  5, fun: { detectMovie(f, true) && [dn, fn].find{ it =~ /(19|20)\d{2}/ } != null } ],
-			[tvs: -1, mov:  1, fun: { fn.contains(mn) && parseEpisodeNumber(fn.after(mn), false) == null } ],
-			[tvs: -1, mov:  1, fun: { mn.getSimilarity(fn) >= 0.8 || [dn, fn].find{ it.findAll( ~/\d{4}/ ).findAll{ y -> [mov.year-1, mov.year, mov.year+1].contains(y.toInteger()) }.size() > 0 } != null } ],
-			[tvs: -1, mov:  1, fun: { [dn, fn].find{ it =~ mn && !(it.after(mn) =~ /\b\d{1,3}\b/) && (it.getSimilarity(mn) > 0.2 + it.getSimilarity(sn)) } != null } ],
-			[tvs: -1, mov:  1, fun: { detectMovie(f, false).aliasNames.find{ fn.contains(norm(it)) } } ]
-		]
-
-		def score = [tvs: 0, mov: 0]
-		metrics.each{
-			if (tvs && mov && it.fun()) {
-				score.tvs += it.tvs
-				score.mov += it.mov
-
-				if (score.tvs >= 1 && score.mov <= -1) {
-					log.fine "Exclude Movie: $mov"
-					mov = null
-				} else if (score.mov >= 1 && score.tvs <= -1) {
-					log.fine "Exclude Series: $tvs"
-					tvs = null
-				}
-			}
-		}
-
-	}
-
-	// CHECK CONFLICT
-	if (((mov && tvs) || (!mov && !tvs))) {
-		if (failOnError) {
-			fail 'Media detection failed'
-		} else {
-			log.fine "Unable to differentiate: [$f.name] => [$tvs] VS [$mov]"
-			return [:]
-		}
-	}
-
-	return [tvs: tvs, mov: mov]
 }
 
-// group entries by unique tvs/mov descriptor
-groups = groups.groupBy{ group, files -> group.collectEntries{ type, query -> [type, query ? query.toString().ascii().normalizePunctuation().lower() : null] } }.collectEntries{ group, maps -> [group, maps.values().flatten()] }
+
+def group(files) {
+	def singleGroupKey = forceGroup()
+	if (singleGroupKey) {
+		return [(singleGroupKey): files]
+	}
+	return new AutoDetection(files, false, _args.language.locale).group()
+}
+
+
+
+// group episodes / movies
+def groups = group(input)
 
 // log movie/series/anime detection results
 groups.each{ group, files -> log.finest "Group: $group => ${files*.name}" }
@@ -417,7 +357,7 @@ def unsortedFiles = []
 // process each batch
 groups.each{ group, files ->
 	// fetch subtitles (but not for anime)
-	if (group.anime == null && subtitles != null && files.findAll{ it.isVideo() }.size() > 0) {
+	if ((group.isMovie() || group.isSeries()) && subtitles != null && files.findAll{ it.isVideo() }.size() > 0) {
 		subtitles.each{ languageCode ->
 			def subtitleFiles = getMissingSubtitles(file: files, lang: languageCode, strict: true, output: 'srt', encoding: 'UTF-8', format: 'MATCH_VIDEO_ADD_LANGUAGE_TAG') ?: []
 			files += subtitleFiles
@@ -427,62 +367,66 @@ groups.each{ group, files ->
 	}
 
 	// EPISODE MODE
-	if ((group.tvs || group.anime) && !group.mov) {
+	if ((group.isSeries() || group.isAnime()) && !group.isMovie()) {
 		// choose series / anime
-		def dest = rename(file: files, format: "/mnt/NAS/Media/Tv-Shows/{n.replaceAll(/[.-]/)}/{episode.special ? 'Specials' : 'Season '+{s.pad(2)}}/{n.replaceAll(/[.-]/)} {episode.special ? 'S00E'+{special.pad(2)}:{s00e00}} {t.replaceAll(/[:?]/).slash().replaceAll('  ')} {vf} {source} {hdr} {vc} {group.replaceAll(/TBS\\[RARBG/, 'TBS RARBG')}", db: 'TheTVDB')
+		def rfs = group.isSeries() ? rename(file: files, format: seriesFormat, db: seriesDB) : rename(file: files, format: animeFormat, order: 'Absolute', db: animeDB)
 
-		if (dest != null) {
-			destinationFiles += dest
+		if (rfs) {
+			destinationFiles += rfs
 
 			if (artwork) {
-				dest.mapByFolder().each{ dir, fs ->
-					def hasSeasonFolder = any{ dir =~ /Specials|Season.\d+/ || dir.parentFile.structurePathTail.listPath().size() > 0 }{ false }	// MAY NOT WORK FOR CERTAIN FORMATS
+				rfs.mapByFolder().each{ dir, fs ->
+					def hasSeasonFolder = any{ dir =~ /Specials|Season.\d+/ || dir.parentFile.structurePathTail.listPath().size() > 0 }{ false }	// MAY NOT WORK WELL FOR CERTAIN FORMATS
 
-					fs.findResults{ it.metadata }.findAll{ it.seriesInfo.database == 'TheTVDB' }.collect{ [name: it.seriesName, season: it.special ? 0 : it.season, id: it.seriesInfo.id] }.unique().each{
-						log.fine "Fetching series artwork for [$it.name / Season $it.season] to [$dir]"
-						fetchSeriesArtworkAndNfo(hasSeasonFolder ? dir.parentFile : dir, dir, it.id, it.season, false, _args.language.locale)
+					fs.findResults{ it.metadata }.findAll{ it.seriesInfo.database == 'TheTVDB' }.collect{ [name: it.seriesName, season: it.special ? 0 : it.season, id: it.seriesInfo.id] }.unique().each{ s ->
+						tryLogCatch {
+							log.fine "Fetching series artwork for [$s.name / Season $s.season] to [$dir]"
+							fetchSeriesArtworkAndNfo(hasSeasonFolder ? dir.parentFile : dir, dir, s.id, s.season, false, _args.language.locale)
+						}
 					}
 				}
 			}
-		} else if (failOnError) {
-			fail "Failed to process group: $group"
+		} else if (failOnError && rfs == null) {
+			die "Failed to process group: $group"
 		} else {
 			unsortedFiles += files
 		}
 	}
 
 	// MOVIE MODE
-	else if (group.mov && !group.tvs && !group.anime) {
-		def dest = rename(file: files, format: "/mnt/NAS/Media/Movies/{hd}/{ny.replace('.','')} [{vf}]/{n.replaceAll(/[.:?]/).slash().replaceAll('  ')} {y} {vf} {source} {bitdepth}bit {hdr} {vc+'-'}{ac+'-'}{af} {group}", db: 'TheMovieDB')
+	else if (group.isMovie() && !group.isSeries() && !group.isAnime()) {
+		def rfs = rename(file: files, format: movieFormat, db: movieDB)
 
-		if (dest != null) {
-			destinationFiles += dest
+		if (rfs) {
+			destinationFiles += rfs
 
 			if (artwork) {
-				dest.mapByFolder().each{ dir, fs ->
-					def movieFile = fs.findAll{ it.isVideo() || it.isDisk() }.sort{ it.length() }.reverse().findResult{ it }
-					if (movieFile) {
+				rfs.mapByFolder().each{ dir, fs ->
+					def movieFile = fs.findAll{ it.isVideo() || it.isDisk() }.toSorted{ it.length() }.reverse().findResult{ it }
+					if (movieFile) tryLogCatch {
 						def movieInfo = movieFile.metadata
 						log.fine "Fetching movie artwork for [$movieInfo] to [$dir]"
-						fetchMovieArtworkAndNfo(dir, movieInfo, movieFile, extras, false, _args.language.locale)
+						if (movieInfo) {
+							fetchMovieArtworkAndNfo(dir, movieInfo, movieFile, false, _args.language.locale)
+						}
 					}
 				}
 			}
-		} else if (failOnError) {
-			fail "Failed to process group: $group"
+		} else if (failOnError && rfs == null) {
+			die "Failed to process group: $group"
 		} else {
 			unsortedFiles += files
 		}
 	}
 
 	// MUSIC MODE
-	else if (group.music) {
-		def dest = rename(file: files, format: musicFormat, db: 'ID3')
+	else if (group.isMusic()) {
+		def rfs = rename(file: files, format: musicFormat, db: musicDB)
 
-		if (dest != null) {
-			destinationFiles += dest
-		} else if (failOnError) {
-			fail "Failed to process group: $group"
+		if (rfs) {
+			destinationFiles += rfs
+		} else if (failOnError && rfs == null) {
+			die "Failed to process group: $group"
 		} else {
 			unsortedFiles += files
 		}
@@ -497,17 +441,21 @@ groups.each{ group, files ->
 
 // ---------- POST PROCESSING ---------- //
 
-// deal with remaining files that cannot be sorted automatically
+
+// process the remaining files that cannot be sorted automatically
 if (unsorted) {
+	// skip file paths that are no longer valid (e.g. due to a partially processed but ultimately failed group)
+	unsortedFiles.removeAll{ f -> !f.exists() }
+
 	if (unsortedFiles.size() > 0) {
 		log.fine "Processing ${unsortedFiles.size()} unsorted files"
 
-		def dest = rename(map: unsortedFiles.collectEntries{ original ->
+		def rfs = rename(map: unsortedFiles.collectEntries{ original ->
 			def destination = getMediaInfo(original, unsortedFormat) as File
 
 			// sanity check user-defined unsorted format
 			if (destination == null) {
-				fail("Illegal usage: unsorted format must yield valid file path")
+				die "Invalid usage: unsorted format must yield valid a file path"
 			}
 
 			// resolve relative paths
@@ -518,8 +466,8 @@ if (unsorted) {
 			return [original, destination]
 		})
 
-		if (dest != null) {
-			destinationFiles += dest
+		if (rfs != null) {
+			destinationFiles += rfs
 		}
 	}
 }
@@ -548,53 +496,44 @@ if (getRenameLog().size() > 0) {
 	}.memoize()
 
 	// make Kodi scan for new content and display notification message
-	if (kodi) {
+	if (kodi) tryLogCatch {
 		kodi.each{ instance ->
 			log.fine "Notify Kodi: $instance"
-			tryLogCatch {
-				showNotification(instance.host, instance.port, getNotificationTitle(), getNotificationMessage(), 'https://app.filebot.net/icon.png')
-				scanVideoLibrary(instance.host, instance.port)
-			}
+			showNotification(instance.host, instance.port, getNotificationTitle(), getNotificationMessage(), 'https://app.filebot.net/icon.png')
+			scanVideoLibrary(instance.host, instance.port)
 		}
 	}
 
 	// make Plex scan for new content
-	if (plex) {
+	if (plex) tryLogCatch {
 		plex.each{ instance ->
 			log.fine "Notify Plex: $instance"
-			tryLogCatch {
-				refreshPlexLibrary(instance.host, null, instance.token)
-			}
+			refreshPlexLibrary(instance.host, null, instance.token)
 		}
 	}
 
 	// make Emby scan for new content
-	if (emby) {
+	if (emby) tryLogCatch {
 		emby.each{ instance ->
 			log.fine "Notify Emby: $instance"
-			tryLogCatch {
-				refreshEmbyLibrary(instance.host, null, instance.token)
-			}
+			refreshEmbyLibrary(instance.host, null, instance.token)
 		}
 	}
 
 	// mark episodes as 'acquired'
-	if (myepisodes) {
+	if (myepisodes) tryLogCatch {
 		log.fine 'Update MyEpisodes'
-		tryLogCatch {
-			executeScript('update-mes', [login:myepisodes.join(':'), addshows:true], getRenameLog().values())
-		}
+		executeScript('update-mes', [login:myepisodes.join(':'), addshows:true], getRenameLog().values())
 	}
 
-	if (pushover) {
+	// pushover only supports plain text messages
+	if (pushover) tryLogCatch {
 		log.fine 'Sending Pushover notification'
-		tryLogCatch {
-			Pushover(pushover[0], pushover[1] ?: 'wcckDz3oygHSU2SdIptvnHxJ92SQKK').send(getNotificationTitle(), getNotificationMessage())
-		}
+		Pushover(pushover[0], pushover[1] ?: 'wcckDz3oygHSU2SdIptvnHxJ92SQKK').send(getNotificationTitle(), getNotificationMessage())
 	}
 
 	// messages used for email / pushbullet reports
-	def getReportSubject = { getNotificationMessage('', ' | ') }
+	def getReportSubject = { getNotificationMessage('', '; ') }
 	def getReportTitle = { '[FileBot] ' + getReportSubject() }
 	def getReportMessage = {
 		def renameLog = getRenameLog()
@@ -646,30 +585,38 @@ if (getRenameLog().size() > 0) {
 
 	// store processing report
 	if (storeReport) {
-		def reportFolder = ApplicationFolder.AppData.resolve('reports')
 		def reportName = [now.format(/[yyyy-MM-dd HH mm]/), getReportSubject().take(50)].join(' ').validateFileName().space('_')
-		def reportFile = getReportMessage().saveAs(reportFolder.resolve(reportName + '.html'))
-		log.finest "Saving report as ${reportFile}"
+		def reportFile = storeReport.resolve(reportName + '.html')
+		log.fine "Saving HTML report to [$reportFile]"
+		getReportMessage().saveAs(reportFile)
 	}
 
 	// send pushbullet report
-	if (pushbullet) {
+	if (pushbullet) tryLogCatch {
 		log.fine 'Sending PushBullet report'
-		tryLogCatch {
-			PushBullet(pushbullet).sendFile(getNotificationTitle() + '.html', getReportMessage(), 'text/html', getNotificationMessage(), any{ mailto }{ null })
-		}
+		PushBullet(pushbullet).sendFile(getNotificationTitle() + '.html', getReportMessage(), 'text/html', getNotificationMessage(), any{ mailto }{ null })
+	}
+
+	// send gmail report
+	if (gmail) tryLogCatch {
+		log.fine 'Sending Gmail report'
+		def account = gmail[0] =~ /@/ ? gmail[0] : gmail[0] + '@gmail.com'
+		Gmail(account, gmail[1]).sendHtml(account, any{ mailto }{ account }, getReportTitle(), getReportMessage())
 	}
 
 	// send email report
-	if (gmail || mail) {
-		tryLogCatch {
-			sendEmailReport(getReportTitle(), getReportMessage(), 'text/html')
-		}
+	if (mail) tryLogCatch {
+		log.fine 'Sending Email report'
+		def account = mail[2]
+		Email(mail[0], mail[1], mail[3], mail[4]).sendHtml(account, any{ mailto }{ account }, getReportTitle(), getReportMessage())
+	}
+
+	// call discord webhook
+	if (discord) tryLogCatch {
+		log.fine 'Calling Discord webhook'
+		Discord(discord).postRenameMap(getReportSubject(), renameLog)
 	}
 }
-
-
-// ---------- CLEAN UP ---------- //
 
 
 // clean up temporary files that may be left behind after extraction
@@ -684,17 +631,24 @@ if (deleteAfterExtract) {
 	}
 }
 
+
+// abort and skip clean-up logic if we didn't process any files
+if (destinationFiles.size() == 0) {
+	die "Finished without processing any files"
+}
+
+
 // clean empty folders, clutter files, etc after move
 if (clean) {
-	if (['DUPLICATE', 'COPY', 'HARDLINK'].any{ it.equalsIgnoreCase(_args.action) } && temporaryFiles.size() > 0) {
+	if (_args.action ==~ /(?i:COPY|HARDLINK|DUPLICATE)/ && temporaryFiles.size() > 0) {
 		log.fine 'Clean temporary extracted files'
 		// delete extracted files
-		temporaryFiles.findAll{ it.isFile() }.sort().each{
+		temporaryFiles.findAll{ it.isFile() }.toSorted().each{
 			log.finest "Delete $it"
 			it.delete()
 		}
 		// delete remaining empty folders
-		temporaryFiles.findAll{ it.isDirectory() }.sort().reverse().each{
+		temporaryFiles.findAll{ it.isDirectory() }.toSorted().reverse().each{
 			log.finest "Delete $it"
 			if (it.getFiles().size() == 0) {
 				it.deleteDir()
@@ -703,7 +657,7 @@ if (clean) {
 	}
 
 	// deleting remaining files only makes sense after moving files
-	if ('MOVE'.equalsIgnoreCase(_args.action)) {
+	if (_args.action ==~ /(?i:MOVE)/) {
 		def cleanerInput = args.size() > 0 ? args : ut.kind == 'multi' && ut.dir ? [ut.dir as File] : []
 		cleanerInput = cleanerInput.findAll{ f -> f.exists() }
 		if (cleanerInput.size() > 0) {
@@ -711,10 +665,4 @@ if (clean) {
 			executeScript('cleaner', args.size() == 0 ? [root:true, ignore: ignore] : [root:false, ignore: ignore], cleanerInput)
 		}
 	}
-}
-
-
-
-if (destinationFiles.size() == 0) {
-	fail "Finished without processing any files"
 }
