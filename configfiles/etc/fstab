@@ -19,5 +19,5 @@ UUID=e3090d4f-3bf2-4f1c-a27d-0246899dc025 /               ext4    errors=remount
 /dev/disk/by-uuid/a1f0bc05-7b5a-4ffb-a0ec-021d38933760 /mnt/Meh7 auto nosuid,nodev,nofail,x-gvfs-show 0 0
 /dev/disk/by-uuid/45dcd428-ce55-4c77-9a0e-648a806dfd2d /mnt/Meh8 auto nosuid,nodev,nofail,x-gvfs-show 0 0
 
-/mnt/Meh*  /mnt/NAS fuse.mergerfs  defaults,allow_other,minfreespace=50G,ignorepponrename=true,func.create=mfs 0 0
+/mnt/Meh*  /mnt/NAS fuse.mergerfs  defaults,allow_other,minfreespace=50G,ignorepponrename=true,func.create=mfs,fsname=Buddanas 0 0
 #mergerfs -o defaults,allow_other,minfreespace=50G,ignorepponrename=true,func.create=mfs /mnt/Meh\* /mnt/NAS
