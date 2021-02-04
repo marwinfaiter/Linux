@@ -18,7 +18,10 @@ GetOptions(
     "uninstall",
     "exclude=s",
     "include=s",
+    "help",
 );
+
+help() if $options{help};
 
 foreach my $path (@ARGV) {
     chomp(my @config_files = `find "$path" -type f`);
@@ -106,4 +109,15 @@ sub _print {
     printf("%s %s %s\n", colored($link_path, $color), $delimiter, colored($file, $color));
 
     return 1;
+}
+
+sub help {
+    exit print "Usage: $0 [options] <input_folders>
+    --home      Which home to use
+    --full      Skip files outside home or not
+    --install   Create symlinks to input_folders based on folder structure
+    --uninstall Reset symlinks to normal files. Copies from input folder.
+    --exclude   Exclude files matching regex
+    --include   Include files matching regex
+"
 }
