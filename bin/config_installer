@@ -16,7 +16,7 @@ GetOptions(
     "full",
     "install",
     "uninstall",
-    "ignore=s",
+    "exclude=s",
     "include=s",
 );
 
@@ -40,8 +40,8 @@ foreach my $path (@ARGV) {
             print colored("$file not matching include, skipping\n", "yellow");
             next;
         }
-        if ($options{ignore} && $file =~ /$options{ignore}/) {
-            print colored("$file matching ignore, skipping\n", "yellow");
+        if ($options{exclude} && $file =~ /$options{exclude}/) {
+            print colored("$file matching exclude, skipping\n", "yellow");
             next;
         }
 
