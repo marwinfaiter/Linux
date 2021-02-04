@@ -45,11 +45,6 @@ foreach my $path (@ARGV) {
             next;
         }
 
-        if (!$options{install} && !$options{uninstall}) {
-            print colored("$link_path no commit\n", "magenta");
-            next;
-        }
-
         my $sudo = $link_path =~ /^$ENV{HOME}/ ? "" : "sudo ";
 
         if ($options{install}) {
@@ -59,26 +54,56 @@ foreach my $path (@ARGV) {
                 next unless $answer =~ /^y(es)?$/i;
             }
             elsif(-l $link_path && $file eq readlink($link_path)) {
-                print colored("$link_path => $file\n", "green");
+                _print($link_path, colored("=>", "cyan"), $file, "green");
                 next;
             }
 
-            system(sprintf('%srm "%s"', $sudo, $link_path));
-            if (!system(sprintf('%sln -s "%s" "%s"', $sudo, $file, $link_path))) {
-                print colored("$link_path => $file\n", "green");
-            }
-            else {
-                print colored("$link_path => $file\n", "red");
-            }
+            my $command = sprintf('%sln -s "%s" "%s"', $sudo, $file, $link_path);
+            run($sudo, $command, colored("=>", "cyan"), $file, $link_path);
         }
         elsif ($options{uninstall}) {
-            system(sprintf('%srm "%s"', $sudo, $link_path));
-            if (!system(sprintf('%scp "%s" "%s"', $sudo, $file, $link_path))) {
-                print colored("$link_path uninstalled\n", "green");
+            my $command = sprintf('%scp "%s" "%s"', $sudo, $file, $link_path);
+            run($sudo, $command, "!=", $file, $link_path);
+        }
+        else {
+            if (! -f $link_path) {
+                _print($link_path, "X", $file, "red");
+            }
+            elsif(-l $link_path && $file eq readlink($link_path)) {
+                _print($link_path, colored("=>", "cyan"), $file, "green");
+            }
+            elsif(-l $link_path && $file ne readlink($link_path)) {
+                _print($link_path, colored("!=>", "cyan"), $file, "red");
             }
             else {
-                print colored("$link_path uninstall failed!\n", "red");
+                _print($link_path, "!=", $file, "green");
             }
         }
     }
+}
+
+sub delete_file {
+    my ($sudo, $file) = @_;
+
+    system(sprintf('%srm "%s"', $sudo, $file));
+
+    return 1;
+}
+
+sub run {
+    my ($sudo, $command, $delimiter, $file, $link_path ) = @_;
+
+    return unless delete_file($sudo, $link_path);
+    my $color = system($command) ? "red" : "green";
+    _print($link_path, $delimiter, $file, $color);
+
+    return 1;
+}
+
+sub _print {
+    my ($link_path, $delimiter, $file, $color) = @_;
+
+    printf("%s %s %s\n", colored($link_path, $color), $delimiter, colored($file, $color));
+
+    return 1;
 }
