@@ -1,0 +1,84 @@
+#!/usr/bin/perl -w
+
+use strict;
+use Data::Dumper;
+use Getopt::Long;
+use Cwd 'abs_path';
+use Term::ANSIColor;
+
+my %options = (
+    home => $ENV{HOME},
+);
+
+GetOptions(
+    \%options,
+    "home=s",
+    "full",
+    "install",
+    "uninstall",
+    "ignore=s",
+    "include=s",
+);
+
+foreach my $path (@ARGV) {
+    chomp(my @config_files = `find "$path" -type f`);
+
+    foreach my $file (@config_files) {
+        $file =~ s/$path\/+//;
+        my $link_path;
+        if ($file =~ /^home/) {
+            $link_path = $file =~ s/^home/$options{home}/r;
+        }
+        else {
+            next if !$options{full};
+            $link_path = "/$file";
+        }
+        $file = "$path/$file";
+        $file = abs_path($file);
+
+        if ($options{include} && $file !~ /$options{include}/) {
+            print colored("$file not matching include, skipping\n", "yellow");
+            next;
+        }
+        if ($options{ignore} && $file =~ /$options{ignore}/) {
+            print colored("$file matching ignore, skipping\n", "yellow");
+            next;
+        }
+
+        if (!$options{install} && !$options{uninstall}) {
+            print colored("$link_path no commit\n", "magenta");
+            next;
+        }
+
+        my $sudo = $link_path =~ /^$ENV{HOME}/ ? "" : "sudo ";
+
+        if ($options{install}) {
+            if (! -f $link_path) {
+                print "$link_path does not exist, do you want to create symlink anyway? [Y/N]: ";
+                chomp(my $answer = <STDIN>);
+                next unless $answer =~ /^y(es)?$/i;
+            }
+            elsif(-l $link_path && $file eq readlink($link_path)) {
+                print colored("$link_path => $file\n", "green");
+                next;
+            }
+
+            system(sprintf('%srm "%s"', $sudo, $link_path));
+            if (!system(sprintf('%sln -s "%s" "%s"', $sudo, $file, $link_path))) {
+                print colored("$link_path => $file\n", "green");
+            }
+            else {
+                print colored("$link_path => $file\n", "red");
+            }
+        }
+        elsif ($options{uninstall}) {
+            system(sprintf('%srm "%s"', $sudo, $link_path));
+            if (!system(sprintf('%scp "%s" "%s"', $sudo, $file, $link_path))) {
+                print colored("$link_path uninstalled\n", "green");
+            }
+            else {
+                print colored("$link_path uninstall failed!\n", "red");
+            }
+        }
+    }
+}
