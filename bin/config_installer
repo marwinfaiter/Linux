@@ -52,7 +52,7 @@ foreach my $path (@ARGV) {
 
         if ($options{install}) {
             if (! -f $link_path) {
-                print "$link_path does not exist, do you want to create symlink anyway? [Y/N]: ";
+                print "$link_path does not exist or is pointing incorrectly, do you want to create symlink anyway? [Y/N]: ";
                 chomp(my $answer = <STDIN>);
                 next unless $answer =~ /^y(es)?$/i;
             }
@@ -69,8 +69,8 @@ foreach my $path (@ARGV) {
             run($sudo, $command, "!=", $file, $link_path);
         }
         else {
-            if (! -f $link_path) {
-                _print($link_path, "X", $file, "red");
+            if (-l $link_path && ! -e $link_path) {
+                _print($link_path, colored("=>", "cyan"), "", "red");
             }
             elsif(-l $link_path && $file eq readlink($link_path)) {
                 _print($link_path, colored("=>", "cyan"), $file, "green");
@@ -78,8 +78,11 @@ foreach my $path (@ARGV) {
             elsif(-l $link_path && $file ne readlink($link_path)) {
                 _print($link_path, colored("!=>", "cyan"), $file, "red");
             }
-            else {
+            elsif (-e $link_path) {
                 _print($link_path, "!=", $file, "green");
+            }
+            else {
+                _print($link_path, colored("X", "red"), "", "green");
             }
         }
     }
