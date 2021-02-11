@@ -27,7 +27,7 @@ foreach my $path (@ARGV) {
     chomp(my @config_files = `find "$path" -type f`);
 
     foreach my $file (@config_files) {
-        $file =~ s/$path\/+//;
+        $file =~ s/$path\/?//;
         my $link_path;
         if ($file =~ /^home/) {
             $link_path = $file =~ s/^home/$options{home}/r;
