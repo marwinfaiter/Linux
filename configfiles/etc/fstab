@@ -10,14 +10,14 @@ UUID=e3090d4f-3bf2-4f1c-a27d-0246899dc025 /               ext4    errors=remount
 # swap was on /dev/sda5 during installation
 #UUID=a678642d-f944-4cf1-9f7e-9cde0862dafe none            swap    sw              0       0
 
-/dev/disk/by-uuid/4ef4eab1-4057-4690-a415-bc5df9374deb /mnt/Meh auto nosuid,nodev,nofail,x-gvfs-show 0 0
-/dev/disk/by-uuid/c5d626a5-17f6-4bc5-8add-e9598aea5889 /mnt/Meh2 auto nosuid,nodev,nofail,x-gvfs-show 0 0
-/dev/disk/by-uuid/19e52f6c-5c4c-44ed-af3a-5e40afb24a37 /mnt/Meh3 auto nosuid,nodev,nofail,x-gvfs-show 0 0
-/dev/disk/by-uuid/a5c8a091-639e-4ded-a6a3-42a09329875b /mnt/Meh4 auto nosuid,nodev,nofail,x-gvfs-show 0 0
-/dev/disk/by-uuid/f6c1ee21-bf2f-4325-86b6-5b5f2124f10c /mnt/Meh5 auto nosuid,nodev,nofail,x-gvfs-show 0 0
-/dev/disk/by-uuid/d20e11cf-6838-4427-962b-c92b0e32fade /mnt/Meh6 auto nosuid,nodev,nofail,x-gvfs-show 0 0
-/dev/disk/by-uuid/a1f0bc05-7b5a-4ffb-a0ec-021d38933760 /mnt/Meh7 auto nosuid,nodev,nofail,x-gvfs-show 0 0
-/dev/disk/by-uuid/45dcd428-ce55-4c77-9a0e-648a806dfd2d /mnt/Meh8 auto nosuid,nodev,nofail,x-gvfs-show 0 0
+UUID=4ef4eab1-4057-4690-a415-bc5df9374deb /mnt/Meh auto nosuid,nodev,nofail,x-gvfs-show 0 0
+UUID=c5d626a5-17f6-4bc5-8add-e9598aea5889 /mnt/Meh2 auto nosuid,nodev,nofail,x-gvfs-show 0 0
+UUID=19e52f6c-5c4c-44ed-af3a-5e40afb24a37 /mnt/Meh3 auto nosuid,nodev,nofail,x-gvfs-show 0 0
+UUID=a5c8a091-639e-4ded-a6a3-42a09329875b /mnt/Meh4 auto nosuid,nodev,nofail,x-gvfs-show 0 0
+UUID=f6c1ee21-bf2f-4325-86b6-5b5f2124f10c /mnt/Meh5 auto nosuid,nodev,nofail,x-gvfs-show 0 0
+UUID=d20e11cf-6838-4427-962b-c92b0e32fade /mnt/Meh6 auto nosuid,nodev,nofail,x-gvfs-show 0 0
+UUID=a1f0bc05-7b5a-4ffb-a0ec-021d38933760 /mnt/Meh7 auto nosuid,nodev,nofail,x-gvfs-show 0 0
+UUID=45dcd428-ce55-4c77-9a0e-648a806dfd2d /mnt/Meh8 auto nosuid,nodev,nofail,x-gvfs-show 0 0
 
 /mnt/Meh*  /mnt/NAS fuse.mergerfs  defaults,allow_other,ignorepponrename=true,func.create=mfs,fsname=Buddanas 0 0
-#mergerfs -o defaults,allow_other,minfreespace=50G,ignorepponrename=true,func.create=mfs /mnt/Meh\* /mnt/NAS
+#mergerfs -o defaults,allow_other,ignorepponrename=true,func.create=mfs,fsname=Buddanas /mnt/Meh\* /mnt/NAS
