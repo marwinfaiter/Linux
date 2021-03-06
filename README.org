@@ -5,3 +5,4 @@
    Contains config files for different applications.
    They are structured in i tree based on their original location.
 *** wopwop
+**** Wopelino
