@@ -57,7 +57,7 @@ movieDB = any{ movieDB }{ 'TheMovieDB' }
 musicDB = any{ musicDB }{ 'ID3' }
 
 // series / anime / movie format expressions
-seriesFormat   = any{ seriesFormat   }{ _args.format }{ "/mnt/NAS/Media/Tv-Shows/{n.replaceAll(/[.-]/)}/{episode.special ? 'Specials' : 'Season '+{s.pad(2)}}/{n.replaceAll(/[.-]/)} {episode.special ? 'S00E'+{special.pad(2)}:{s00e00}} {t.replaceAll(/[:?]/).slash().replaceAll('  ')} {vf} {source} {hdr} {vc} {group.replaceAll(/TBS\\[RARBG/, 'TBS RARBG')}" }{ '{plex}' }
+seriesFormat   = any{ seriesFormat   }{ _args.format }{ "/mnt/NAS/Media/Tv-Shows/{n.replaceAll(/[.-]/)} [{info.status}]/{episode.special ? 'Specials' : 'Season '+{s.pad(2)}}/{n.replaceAll(/[.-]/)} {episode.special ? 'S00E'+{special.pad(2)}:{s00e00}} {t.replaceAll(/[:?]/).slash().replaceAll('  ')} {vf} {source} {hdr} {vc} {group.replaceAll(/TBS\\[RARBG/, 'TBS RARBG')}" }{ '{plex}' }
 animeFormat    = any{ animeFormat    }{ _args.format }{ '{plex}' }
 movieFormat    = any{ movieFormat    }{ _args.format }{ "/mnt/NAS/Media/Movies/{hd}/{ny.replace('.','')} [{vf}]/{n.replaceAll(/[.:?]/).slash().replaceAll('  ')} {y} {vf} {source} {bitdepth}bit {hdr} {vc+'-'}{ac+'-'}{af} {group}" }{ '{plex}' }
 musicFormat    = any{ musicFormat    }{ _args.format }{ '{plex}' }
